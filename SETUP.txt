@@ -1,0 +1,78 @@
+코드연습실
+
+PC 전용 C++ 학습 사이트. 중간고사 대비 4문제, 코드 자동 저장,
+파일 가져오기, UTF-8 BOM/CRLF .cpp 다운로드, 제출 결과, 반례 찾기 화면.
+과제 제출용 원본 .cpp 파일과 Visual Studio 프로젝트는 변경하지 않는다.
+
+배포 구성
+- 공개 화면: GitHub Pages / o3oC4T/cpp-study-room
+- 인증·초대·기록: Supabase Auth, PostgreSQL, Edge Function classroom
+- 비공개 과제 저장소: o3oC4T/cpp-coursework
+  제출 소스를 버전 관리하고 해당 커밋의 프로젝트 테스트를 Windows/MSVC로 실행한다.
+  일반적인 임의 코드 실행 API나 범용 서버리스 서비스로 사용하지 않는다.
+
+로컬 실행
+  npm ci
+  npm run dev
+  npm test
+  npm run test:browser
+  npx deno check --config supabase/functions/deno.json supabase/functions/classroom/index.ts
+  npx deno test --config supabase/functions/deno.json supabase/functions/classroom/validation_test.ts
+  npm run build
+
+아직 필요한 계정 연결
+1. 이 작업에 Supabase 연결 권한을 부여하고 사용할 프로젝트를 확인한다.
+   Supabase 웹사이트의 로그인 상태는 작업 도구의 연결 권한과 다르다.
+2. supabase/migrations의 SQL과 classroom Edge Function을 배포한다.
+   함수는 getUser()로 JWT를 검증하므로 플랫폼 verify_jwt=false를 사용한다.
+3. GitHub 로그인 제공자의 OAuth client ID/secret과 Supabase callback URL을 설정한다.
+   Site URL/redirect URL은 위 GitHub Pages 주소로 제한한다.
+4. 과제 저장소 하나에만 설치한 GitHub App을 연결한다.
+   Repository permissions: Contents read/write, Actions read, Metadata read.
+   개인 gh 로그인 토큰을 복사해 서비스 키로 사용하지 않는다.
+   App private key는 PKCS#8 형식으로 변환하고 Supabase secret으로만 저장한다.
+5. supabase/functions/.env.example의 서버 설정을 채운다.
+   프런트엔드에는 SUPABASE_URL과 SUPABASE_PUBLISHABLE_KEY만
+   GitHub repository variables로 설정한다.
+6. 실제 로그인, 다른 사용자 기록 접근 거부, 초대, 제출-커밋-채점-결과 수신을
+   클라우드에서 검증한 뒤 JUDGE_ENABLED=true로 바꾼다.
+   현재 이 연결이 없으면 로그인·제출·반례 찾기를 활성화하지 않는다.
+
+소스와 테스트 데이터
+- 공개 저장소에는 교수님 PDF, 학생의 정답 C++ 원본, 비공개 테스트를 넣지 않는다.
+- .local/course는 비공개 과제 저장소의 로컬 작업 복사본이다.
+- public judge/의 Sandbox.cs, common.ps1, grade.ps1은 과제 저장소의 judge/에 복사한다.
+- judge/grade.yml은 과제 저장소의 .github/workflows/grade.yml에 둔다.
+- cases/midterm-N.json과 judge/counterexamples.mjs는 비공개 저장소에만 둔다.
+- 제출은 submissions/<UUID>/main.cpp와 current.json을 같은 커밋에 저장한다.
+- GitHub App이 생성한 실제 coursework 커밋을 CI가 테스트한다.
+
+채점
+- Windows Visual Studio MSVC /EHsc /W3 /Od /MDd /permissive- /utf-8
+- 실행당 벽시계 시간 2초, Job Object 메모리 256MB, 출력 합계 64KB
+- 컴파일 시간 45초, 메모리 1GB
+- CRLF와 LF만 같은 것으로 취급한다. 공백, 빈 줄, 마지막 줄바꿈은 비교한다.
+- 함수 사용·배운 범위·메모리 해제 등 모든 소스 조건의 준수를 보증하지는 않는다.
+- 맞았습니다, 틀렸습니다, 컴파일 에러, 런타임 에러, 시간 초과,
+  메모리 초과, 출력 초과, 채점 서버 오류를 구분한다.
+- 반례 찾기는 고정 경계값과 커밋으로 시드가 정해진 무작위 입력 16개를 검사한다.
+  첫 실패의 입력·정답 출력·내 출력을 보여준다. 최소 반례라고 주장하지 않는다.
+  반례를 못 찾은 결과는 정답 판정으로 집계하지 않는다.
+- 예제 실행/제출/반례 찾기는 모두 1인 최근 24시간 5회, 전체 20회 한도를 공유한다.
+  GitHub 사용량과 비용 한도를 확인한 후 조정한다. 무료·무제한을 보장하지 않는다.
+
+격리
+- 컴파일과 실행 모두 capability 없는 Windows AppContainer 안에서 수행한다.
+- Job Object에 일시 중지 프로세스를 넣은 후 시작한다.
+- 자식 환경 변수와 상속 가능한 핸들은 허용 목록만 전달한다.
+- 설치된 Visual Studio의 ACL은 변경하지 않는다. 임시 복사한 도구만 읽기 허용한다.
+- 실행 때에는 디버그 런타임 폴더만 읽기 허용한다.
+- 작업 폴더 정리는 reparse point를 따라가지 않는다.
+- GitHub App/Supabase 서비스 키는 채점 job과 학생 코드에 전달하지 않는다.
+- 결과 artifact를 실행하거나 디스크에 압축 해제하지 않는다.
+- 결과는 제출 ID, 문제, 모드, 정확한 커밋과 workflow run을 확인한 뒤 기록한다.
+- 결과 polling은 DB의 원자적 5초 간격 제한을 적용한다.
+
+검증 한계
+로컬 Windows의 MSVC 및 AppContainer 검증은 클라우드 전체 연결 검증을 대신하지 않는다.
+GitHub/Supabase 연결과 실제 다중 사용자 권한 검증을 마치기 전에는 채점을 공개하지 않는다.

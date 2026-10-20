@@ -1,0 +1,43 @@
+name: Coursework tests
+on:
+  push:
+    branches: [main]
+    paths: ['submissions/**', 'current.json']
+permissions:
+  contents: read
+concurrency:
+  group: coursework-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  grade:
+    runs-on: windows-2022
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Verify exact coursework revision
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          if ((git rev-parse HEAD) -ne $env:EXPECTED_SHA) { throw 'Revision mismatch' }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Compile and test inside Windows AppContainer
+        shell: cmd
+        env:
+          COURSE_COMMIT: ${{ github.sha }}
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File judge\grade.ps1 -Repository "%GITHUB_WORKSPACE%" -WorkRoot "%RUNNER_TEMP%\cpp-judge" -CommitSha "%COURSE_COMMIT%" -ResultFile "%RUNNER_TEMP%\cpp-result\result.json"
+      - name: Store bounded test feedback
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: grade-result
+          path: ${{ runner.temp }}/cpp-result/result.json
+          retention-days: 7
+          if-no-files-found: error
