@@ -1,6 +1,7 @@
+import practice from './practice.json' with { type: 'json' };
 const io = '#include <iostream>\nusing namespace std;\n\n';
 
-export const problems = [
+const originalProblems = [
   {
     id: 'midterm-1', number: '01', title: '파일 버전 업데이트',
     subtitle: '문자열에서 정보를 꺼내고, 다음 버전으로 바꿔 보세요.',
@@ -93,5 +94,7 @@ export const problems = [
     starter: io + 'int ticketPrice(int age, int count)\n{\n\t// 여기에 작성하세요.\n\treturn 0;\n}\n\nint applyDiscount(int total, char code)\n{\n\t// 여기에 작성하세요.\n\treturn total;\n}\n\nint main()\n{\n\tint age, count;\n\tchar code;\n\tcout << "나이 입력: ";\n\tcin >> age;\n\tcout << "티켓 수 입력: ";\n\tcin >> count;\n\tcout << "할인 코드(N/D): ";\n\tcin >> code;\n\tcout << endl;\n\n\t// try, catch(float), catch(...)를 작성하세요.\n\treturn 0;\n}\n',
   },
 ];
+
+export const problems = [...originalProblems.map(p => ({...p, collection: 'midterm', source: '중간고사 대비 과제 (1).pdf · 해당 문제의 작성 조건과 실행 예시'})), ...practice];
 
 export const findProblem = (id) => problems.find((p) => p.id === id);

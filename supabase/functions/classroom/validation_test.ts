@@ -38,3 +38,19 @@ Deno.test('stream size limit cancels before buffering the entire request',async(
   const small=new Response('한글').body;
   assert(new TextDecoder().decode(await readBounded(small,6))==='한글');
 });
+
+import {accountInput,initialPassword,passwordInput} from './accounts.ts';
+Deno.test('pre-issued accounts reject unsafe names and weak passwords',()=>{
+ assert(accountInput({username:'friend01',displayName:'친구'}).username==='friend01');
+ for(const username of ['A','x','../admin','<script>','friend@evil.com'])throws(()=>accountInput({username,displayName:'test'}));
+ throws(()=>passwordInput({currentPassword:'old',newPassword:'short'}));
+ throws(()=>passwordInput({currentPassword:'old',newPassword:'가'.repeat(25)}));
+ throws(()=>passwordInput({currentPassword:'samepassword123',newPassword:'samepassword123'}));
+ assert(passwordInput({currentPassword:'old',newPassword:'a long passphrase 123'}).next==='a long passphrase 123');
+ const passwords=Array.from({length:100},()=>initialPassword());
+ assert(new Set(passwords).size===100&&passwords.every(p=>p.length>=32&&p.length<=72));
+});
+Deno.test('all expanded problem IDs are accepted but out of range sets are rejected',()=>{
+ for(let s=1;s<=8;s++)for(let p=1;p<=4;p++)assert(validateSubmission({problemId:`practice-${s}-${p}`,mode:'full',requestId:submission.id,code:'int main(){}'}));
+ for(const problemId of ['practice-0-1','practice-9-1','practice-1-5','practice-1-1/../x'])throws(()=>validateSubmission({problemId,mode:'full',requestId:submission.id,code:'int main(){}'}));
+});

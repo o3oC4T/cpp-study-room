@@ -1,8 +1,9 @@
 create table public.members (
-  github_id text primary key check (github_id ~ '^[0-9]{1,20}$'),
-  github_login text not null,
-  user_id uuid unique references auth.users(id) on delete set null,
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  username text unique not null check (username ~ '^[a-z][a-z0-9_]{2,23}$'),
+  display_name text not null check (length(display_name) between 1 and 30),
   role text not null default 'student' check (role in ('owner', 'student')),
+  must_change_password boolean not null default true,
   active boolean not null default true,
   created_at timestamptz not null default now()
 );
@@ -11,7 +12,7 @@ create table public.submissions (
   id uuid primary key default gen_random_uuid(),
   request_id uuid not null,
   user_id uuid not null references auth.users(id) on delete cascade,
-  problem_id text not null check (problem_id in ('midterm-1','midterm-2','midterm-3','midterm-4')),
+  problem_id text not null check (problem_id ~ '^(midterm-[1-4]|practice-[1-8]-[1-4])$'),
   mode text not null check (mode in ('sample','full','counterexample')),
   source text not null check (octet_length(source) between 1 and 65536),
   status text not null default 'preparing'
@@ -45,8 +46,8 @@ create function public.reserve_submission(
 declare item public.submissions;
 begin
   perform pg_advisory_xact_lock(731604210);
-  if not exists(select 1 from public.members where user_id = p_user and active) then
-    raise exception '초대된 계정만 제출할 수 있어요.';
+  if not exists(select 1 from public.members where user_id = p_user and active and not must_change_password) then
+    raise exception '운영자가 발급하고 초기 비밀번호 변경을 마친 계정만 제출할 수 있어요.';
   end if;
   select * into item from public.submissions where user_id = p_user and request_id = p_request;
   if found then return item; end if;
@@ -82,6 +83,13 @@ $$;
 revoke all on function public.claim_result_poll(uuid,uuid) from public,anon,authenticated;
 grant execute on function public.claim_result_poll(uuid,uuid) to service_role;
 
--- Existing connected GitHub account; membership cannot be self-assigned by the client.
-insert into public.members(github_id,github_login,role)
-values ('261565264','o3oC4T','owner');
+-- Accounts are provisioned with the trusted admin script; no public signup or seeded password.
+
+-- Keep solved progress even when the recent-submissions list rolls past 100 entries.
+create function public.solved_problems(p_user uuid) returns table(problem_id text)
+language sql security definer set search_path = '' stable as $$
+  select distinct s.problem_id from public.submissions s
+  where s.user_id=p_user and s.mode='full' and s.status='accepted';
+$$;
+revoke all on function public.solved_problems(uuid) from public,anon,authenticated;
+grant execute on function public.solved_problems(uuid) to service_role;

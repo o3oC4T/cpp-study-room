@@ -14,8 +14,8 @@ test('source and compiler output are escaped before being rendered', () => {
   assert.equal(escapeHTML('<img src=x onerror="alert(1)">'), '&lt;img src=x onerror=&quot;alert(1)&quot;&gt;');
   assert.equal(escapeHTML('&\'한글'), '&amp;&#39;한글');
 });
-test('four unique problems have starter code and separated standard input/output', () => {
-  assert.equal(new Set(problems.map((p)=>p.id)).size,4);
+test('thirty-six unique problems have starter code and separated standard input/output', () => {
+  assert.equal(new Set(problems.map((p)=>p.id)).size,36);
   for (const p of problems) {
     assert.match(p.starter, /int main\(\)/);
     assert.ok(p.requirements.length>0 && p.samples.length>0);
@@ -26,4 +26,13 @@ test('four unique problems have starter code and separated standard input/output
   }
   assert.match(problems[3].samples[1].output, /\[입력 오류\]/);
   assert.match(problems[3].note, /0세/);
+});
+
+import {collections} from '../src/collections.js';
+import {lessons} from '../src/lessons.js';
+test('all sets have four varied problems and learning links resolve',()=>{
+ assert.equal(collections.length,9);
+ for(const c of collections){const group=problems.filter(p=>p.collection===c.id);assert.equal(group.length,4);assert.equal(new Set(group.map(p=>p.topic)).size,4);}
+ assert.equal(lessons.length,6);
+ for(const l of lessons){assert.ok(l.source.includes('PDF')||l.source.includes('쪽'));assert.equal(l.sections.length,3);assert.ok(l.frames.length>=3);for(const id of l.practice)assert.ok(problems.some(p=>p.id===id));}
 });

@@ -4,3 +4,15 @@ project_id = "cpp-study-room"
 # The function validates the bearer token with auth.getUser() itself.
 # Supports Supabase projects using asymmetric signing keys.
 verify_jwt = false
+
+[auth]
+enable_signup = false
+minimum_password_length = 12
+jwt_expiry = 900
+
+[auth.email]
+enable_signup = false
+secure_password_change = true
+
+[auth.external.github]
+enabled = false

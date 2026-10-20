@@ -4,7 +4,11 @@ import { syntaxHighlighting, HighlightStyle } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 import { problems, findProblem } from './problems.js';
 import { escapeHTML as e, getLocal, setLocal, downloadSource, statusNames, modeNames, firstDifference } from './lib.js';
-import { configured, supabase, api, login } from './api.js';
+import { configured, judgeReady, supabase, api, login } from './api.js';
+import {collections, findCollection} from './collections.js';
+import {lessons, findLesson} from './lessons.js';
+import {learningOverview, lessonHTML, bindLesson} from './learning.js';
+import '@tabler/core/dist/css/tabler.min.css';
 import './style.css';
 
 const icons = {
@@ -26,7 +30,8 @@ const app = document.querySelector('#app');
 let editor, activeProblem, session, member, history = [], currentResult, polling, routeVersion = 0, busy = false;
 const storageKey = (id) => `cpp-room:draft:${session?.user.id || 'guest'}:${id}`;
 const draft = (id) => getLocal(storageKey(id));
-const solved = (id) => history.some((s) => s.problem_id === id && s.mode === 'full' && s.status === 'accepted');
+let solvedProblemIds = new Set();
+const solved = (id) => solvedProblemIds.has(id) || history.some((s) => s.problem_id === id && s.mode === 'full' && s.status === 'accepted');
 
 function toast(message) {
   const el = document.querySelector('#toast');
@@ -37,6 +42,7 @@ function toast(message) {
 }
 function saveDraft() {
   if (!editor || !activeProblem) return;
+  if (editor.state.doc.toString() === activeProblem.starter && !draft(activeProblem.id)) return;
   const ok = setLocal(storageKey(activeProblem.id), { code: editor.state.doc.toString(), updatedAt: Date.now() });
   const el = document.querySelector('#save-state');
   if (el) el.textContent = ok ? '이 브라우저에 저장됨' : '저장 공간 부족 · 파일로 저장하세요';
@@ -49,76 +55,54 @@ function cleanup() {
   currentResult = null;
 }
 function shell(content, page = 'problems') {
-  const user = member?.github_login || (session ? '내 계정' : null);
-  app.innerHTML = `
-    <header class="header">
-      <a class="brand" href="#/"><span class="brand-icon">${icon('code')}</span><span>코드연습실<small>C++ STUDY ROOM</small></span></a>
-      <nav aria-label="주 메뉴">
-        <a class="${page === 'problems' ? 'active' : ''}" href="#/">문제 목록</a>
-        <a class="${page === 'history' ? 'active' : ''}" href="#/history">내 제출</a>
-      </nav>
-      <div class="account">
-        <span class="environment"><span class="dot"></span>Visual Studio · C++</span>
-        <button class="button ${session ? 'quiet' : 'dark'} small" data-action="${session ? 'account' : 'login'}">${icon('github')}<span>${e(user || 'GitHub 로그인')}</span></button>
-      </div>
-    </header>
-    ${content}
-    <footer><span>코드로 이해하고, 함께 성장하기.</span><span>C++ · Windows MSVC</span></footer>
-    <dialog id="dialog"></dialog>
-  `;
+  const user = member?.display_name || member?.username || (session ? '내 계정' : null);
+  app.innerHTML = `<div class="page">
+    <aside class="navbar navbar-vertical sidebar" aria-label="주 메뉴">
+      <a class="brand" href="#/"><span class="brand-icon">${icon('code')}</span><span>코드연습실<small>C++ WORKSPACE</small></span></a>
+      <div class="sidebar-label">WORKSPACE</div>
+      <nav class="sidebar-nav"><a class="${page === 'problems' ? 'active' : ''}" href="#/" aria-label="문제 목록">${icon('code')} 문제 목록 <small>${problems.length}</small></a><a class="${page === 'learn' ? 'active' : ''}" href="#/learn" aria-label="개념 학습">${icon('book')} 개념 학습 <small>6</small></a><a class="${page === 'history' ? 'active' : ''}" href="#/history">${icon('clock')} 내 제출</a></nav>
+      <div class="sidebar-label">PRACTICE SETS</div><nav class="set-nav">${collections.map(c=>`<a href="#/set/${c.id}" class="${location.hash===`#/set/${c.id}`?'active':''}"><span>${c.number}</span>${e(c.title)}</a>`).join('')}</nav>
+      <div class="sidebar-bottom"><span class="environment"><span class="dot"></span>Windows · MSVC</span><p>배운 범위 안에서,<br>직접 쓰면서 이해하기.</p><a href="https://github.com/o3oC4T/cpp-study-room" target="_blank" rel="noreferrer">${icon('github')} 프로젝트</a></div>
+    </aside>
+    <div class="page-wrapper"><header class="header"><div class="header-path"><span>코드연습실</span><b>/</b>${page==='learn'?'개념 학습':page==='history'?'내 제출':'문제 풀이'}</div><div class="account"><span class="environment">C++ · PC 실습 환경</span><button class="button ${session?'light':'dark'} small" data-action="${session?'account':'login'}">${icon('code')}<span>${e(user || '로그인')}</span></button></div></header>
+    ${content}<footer><span>코드연습실 · C++ 연습 워크스페이스</span><span>Tabler 기반 · Windows MSVC</span></footer></div>
+    <dialog id="dialog"></dialog></div>`;
 }
-function dashboard() {
+function problemRows(list) {
+ return list.map(p=>`<a class="problem-row" href="#/problem/${p.id}"><span class="problem-number">${p.number}</span><span class="problem-title"><strong>${e(p.title)}</strong><small>${e(p.topic)}</small></span><span class="problem-status ${solved(p.id)?'done':draft(p.id)?'draft':''}">${solved(p.id)?'통과 ✓':draft(p.id)?'작성 중':'시작 전'}</span><span class="row-arrow">${icon('arrow')}</span></a>`).join('');
+}
+function dashboard(collection) {
   activeProblem = null;
-  const done = problems.filter((p) => solved(p.id)).length;
-  const last = problems.map((p) => ({ p, d: draft(p.id) })).filter(({d}) => d).sort((a,b) => b.d.updatedAt - a.d.updatedAt)[0];
-  shell(`
-    <main class="dashboard">
-      <section class="hero">
-        <div class="hero-copy">
-          <span class="eyebrow"><span class="dot"></span> OUR LITTLE CODING CLUB</span>
-          <h1>오늘도,<br><span>한 문제씩.</span></h1>
-          <p>배운 만큼 직접 써 보고, 틀린 곳에서 다시 시작해요.<br>친구들과 함께하는 작은 C++ 연습실.</p>
-          <a class="button dark hero-button" href="#/problem/${last?.p.id || problems[0].id}">${last ? '이어서 풀기' : '첫 문제 시작하기'} ${icon('arrow')}</a>
-        </div>
-        <div class="hero-art" aria-hidden="true">
-          <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
-          <div class="code-card"><div class="code-title"><i></i><i></i><i></i><span>practice.cpp</span></div>
-            <div class="code-lines"><span><b>01</b><em>#include</em> &lt;iostream&gt;</span><span><b>02</b><em>using namespace</em> std;</span><span><b>03</b></span><span><b>04</b><em>int</em> main()</span><span><b>05</b>{</span><span><b>06</b>    cout &lt;&lt; <strong>"작은 시작"</strong>;</span><span><b>07</b>    <em>return</em> <strong>0</strong>;</span><span><b>08</b>}</span></div>
-          </div><span class="art-note">${icon('code')} ONE LINE AT A TIME</span>
-        </div>
-      </section>
-      <section class="collection">
-        <div class="section-heading"><div><div class="eyebrow">PRACTICE COLLECTION 01</div><h2>중간고사 준비하기 <span class="count">4</span></h2><p>문자열부터 예외 처리까지, 배운 내용을 연결해 봐요.</p></div>
-          <div class="progress-box"><span>내 학습 현황 <b>${done}<small> / 4</small></b></span><div class="progress-track"><div style="width:${done * 25}%"></div></div></div>
-        </div>
-        <div class="table-heading"><span>문제</span><span>학습 키워드</span><span>진행 상태</span></div>
-        <div class="problem-list">${problems.map((p) => `<a class="problem-row" href="#/problem/${p.id}">
-          <span class="problem-number">${p.number}</span>
-          <span class="problem-title"><strong>${e(p.title)}</strong><small>${e(p.subtitle)}</small></span>
-          <span class="tags">${p.tags.map((t) => `<span>${e(t)}</span>`).join('')}</span>
-          <span class="problem-status ${solved(p.id) ? 'done' : draft(p.id) ? 'draft' : ''}">${solved(p.id) ? icon('check') + '통과' : draft(p.id) ? '작성 중' : '시작 전'}</span>
-          <span class="row-arrow">${icon('arrow')}</span>
-        </a>`).join('')}</div>
-      </section>
-      <section class="bottom-notes">
-        <div>${icon('book')}<div><strong>배운 범위 안에서 차근차근</strong><p>과제 조건을 먼저 확인하고, 교재에서 배운 방법으로 풀어 보세요.</p></div></div>
-        <div>${icon(configured ? 'check' : 'clock')}<div><strong>${configured ? '내 코드, 내 기록' : '코드 작성은 지금 바로'}</strong><p>${configured ? '초대된 GitHub 계정으로 로그인하면 제출 기록을 모아 볼 수 있어요.' : '코드 작성·자동 저장·파일 다운로드를 사용할 수 있어요. 온라인 채점은 연결 준비 중이에요.'}</p></div></div>
-      </section>
-    </main>
-  `);
+  const done=problems.filter(p=>solved(p.id)).length;
+  const drafts=problems.map(p=>({p,d:draft(p.id)})).filter(x=>x.d).sort((a,b)=>b.d.updatedAt-a.d.updatedAt);
+  const last=drafts[0];
+  const visible=collection?[collection]:collections;
+  shell(`<main class="page-content dashboard"><div class="page-heading"><div><div class="eyebrow">${collection?'PRACTICE SET '+collection.number:'YOUR CODING WORKSPACE'}</div><h1>${collection?e(collection.title):'문제 풀이 워크스페이스'}</h1><p>${collection?e(collection.subtitle):'네 가지 주제를 한 세트로. 배운 개념을 코드로 연결해 보세요.'}</p></div><a class="button dark" href="#/problem/${collection?problems.find(p=>p.collection===collection.id).id:last?.p.id||'midterm-1'}">${last&&!collection?'이어서 풀기':'문제 시작하기'} ${icon('arrow')}</a></div>
+   ${!collection?`<div class="overview-grid"><div class="card stat-card"><span>연습 문제</span><strong>${problems.length}<small>문제</small></strong><p>9세트 × 4문제</p></div><div class="card stat-card progress-box"><span>전체 채점 통과</span><strong>${done}<small>/ ${problems.length}</small></strong><div class="progress-track"><div style="width:${done/problems.length*100}%"></div></div></div><div class="card stat-card"><span>작성 중인 코드</span><strong>${drafts.filter(x=>!solved(x.p.id)).length}<small>개</small></strong><p>이 브라우저에 자동 저장</p></div><a class="card study-entry" href="#/learn"><span class="pill">CONCEPT LAB</span><h2>포인터 · struct · 동적 할당</h2><p>메모리 그림으로 이해하고<br>코드 한 줄로 확인하기</p><strong>개념 학습 열기 →</strong></a></div>`:''}
+   <div class="library-heading"><div><h2>${collection?'이번 세트의 4문제':'연습 세트'}</h2><p>${collection?'작성 조건, 입력 범위, 출력 예시를 먼저 확인하세요.':'기존 중간고사 대비 4문제 + 교재 기반 새 문제 32개'}</p></div><label class="search-field">${icon('search')}<input id="problem-search" type="search" placeholder="문제 이름 · 키워드 검색" aria-label="문제 검색"></label></div>
+   <div id="collection-grid" class="collection-grid ${collection?'single':''}">${visible.map(c=>`<section class="card collection-card" data-collection="${c.id}"><div class="collection-card-heading"><span class="set-number">${c.number}</span><div><a href="#/set/${c.id}"><h3>${e(c.title)}</h3></a><p>${e(c.subtitle)}</p></div><span class="pill">${c.id==='midterm'?'교수님 과제':'연습 4문제'}</span></div><div class="problem-list">${problemRows(problems.filter(p=>p.collection===c.id))}</div><div class="collection-card-footer"><span>${e(c.topics)}</span><span>${problems.filter(p=>p.collection===c.id&&solved(p.id)).length}/4 통과</span></div></section>`).join('')}</div><p id="search-empty" class="large-empty" hidden>검색 결과가 없어요. 다른 키워드로 찾아보세요.</p>
+   <div class="connection-note"><span class="dot ${configured?'':'muted'}"></span>${configured?'발급받은 계정으로 로그인하면 채점과 제출 기록을 사용할 수 있어요.':'문제 풀이 · 개념 학습 · 코드 저장은 바로 사용 가능해요. 로그인과 온라인 채점은 서버 연결 준비 중입니다.'}</div>
+  </main>`);
+  document.querySelector('#problem-search').oninput=ev=>{
+    const query=ev.target.value.toLowerCase().trim();let count=0;
+    document.querySelectorAll('[data-collection]').forEach(card=>{
+      const list=problems.filter(p=>p.collection===card.dataset.collection && `${p.title} ${p.topic} ${p.tags.join(' ')}`.toLowerCase().includes(query));
+      card.hidden=!list.length;card.querySelector('.problem-list').innerHTML=problemRows(list);count+=list.length;
+    });document.querySelector('#search-empty').hidden=count>0;
+  };
 }
 function problemPage(p) {
   activeProblem = p;
   const saved = draft(p.id);
   shell(`<main class="workspace">
     <div class="workspace-heading">
-      <a class="back-link" href="#/">← 문제 목록</a>
+      <a class="back-link" href="#/set/${p.collection}">← ${e(findCollection(p.collection)?.title || '문제 목록')}</a>
       <div class="workspace-title"><span class="problem-number">${p.number}</span><h1>${e(p.title)}</h1><span class="pill">${e(p.topic)}</span></div>
-      <div class="problem-nav">${problems.map((q) => `<a href="#/problem/${q.id}" class="${q.id === p.id ? 'selected' : ''}" aria-label="${e(q.title)}" ${q.id === p.id ? 'aria-current="page"' : ''}>${q.number}</a>`).join('')}</div>
+      <div class="problem-nav">${problems.filter(q=>q.collection===p.collection).map((q) => `<a href="#/problem/${q.id}" class="${q.id === p.id ? 'selected' : ''}" aria-label="${e(q.title)}" ${q.id === p.id ? 'aria-current="page"' : ''}>${q.number}</a>`).join('')}</div>
     </div>
     <div class="workspace-grid">
       <article class="statement">
-        <div class="panel-title">${icon('book')} 문제 설명<span>중간고사 대비 · 실습 ${Number(p.number)}</span></div>
+        <div class="panel-title">${icon('book')} 문제 설명<span>${e(findCollection(p.collection)?.title)} · ${Number(p.number)}번</span></div>
         <div class="statement-body">
           <div class="eyebrow">THE CHALLENGE</div><h2>${e(p.title)}</h2>
           ${p.description.map((s) => `<p>${e(s)}</p>`).join('')}
@@ -128,7 +112,7 @@ function problemPage(p) {
           <h3>입출력 예제</h3>
           <p class="small-note">출력에는 프로그램이 출력한 문자만 표시합니다. 입력한 값은 자동으로 되풀이되지 않아 입력 안내 문구가 붙어 보일 수 있어요.</p>
           ${p.samples.map((s, i) => `<section class="sample"><div class="sample-title">예제 ${i+1}</div><div class="sample-label">입력<button class="text-button" data-action="copy-input" data-index="${i}">복사</button></div><pre>${e(s.input)}</pre><div class="sample-label">기대 출력<button class="text-button" data-action="copy-output" data-index="${i}">복사</button></div><pre>${e(s.output)}</pre></section>`).join('')}
-          <h3>채점 안내</h3><p class="small-note">시간 제한 2초 · 메모리 제한 256MB · 출력 제한 64KB</p><p class="small-note">Windows MSVC에서 컴파일하고 입력별 출력을 비교합니다. 줄바꿈의 CRLF/LF 차이만 허용하며 공백·빈 줄·숫자 정밀도는 그대로 비교합니다. 출력 통과만으로 함수 사용, 메모리 해제, 학습 범위 준수가 모두 검증되지는 않으니 작성 조건도 직접 확인하세요.</p>
+          <div class="source-note"><strong>기반 자료</strong><p>${e(p.source)}</p></div><h3>채점 안내</h3><p class="small-note">시간 제한 2초 · 메모리 제한 256MB · 출력 제한 64KB</p><p class="small-note">Windows MSVC에서 컴파일하고 입력별 출력을 비교합니다. 줄바꿈의 CRLF/LF 차이만 허용하며 공백·빈 줄·숫자 정밀도는 그대로 비교합니다. 출력 통과만으로 함수 사용, 메모리 해제, 학습 범위 준수가 모두 검증되지는 않으니 작성 조건도 직접 확인하세요.</p>
         </div>
       </article>
       <section class="coding">
@@ -141,8 +125,8 @@ function problemPage(p) {
           <div id="editor" aria-label="C++ 코드 편집기"></div>
           <div class="editor-bottom"><span id="save-state">${saved ? '이 브라우저에 저장됨' : '작성하면 자동 저장돼요'}</span><span>UTF-8 · C++</span></div>
         </div>
-        <div class="run-bar"><div><span class="dot ${configured ? '' : 'muted'}"></span>${configured ? 'Windows · MSVC' : '온라인 채점 연결 준비 중'}</div><button class="button light" data-action="submit-sample" ${!configured ? 'disabled' : ''}>${icon('play')} 예제 실행</button><button class="button light" data-action="counterexample" ${!configured ? 'disabled' : ''}>${icon('search')} 반례 찾기</button><button class="button dark" data-action="submit" ${!configured ? 'disabled' : ''}>제출하기 ${icon('arrow')}</button></div>
-        <section class="result-panel" aria-live="polite"><div class="panel-title">${icon('code')} 실행 결과</div><div id="result"><div class="empty-result"><span class="empty-icon">${icon('code')}</span><strong>${configured ? '작성한 코드를 확인해 볼까요?' : '코드부터 차근차근 작성해 보세요'}</strong><p>${configured ? '예제를 실행하거나 제출하면 결과가 여기에 표시돼요.' : '지금은 .cpp 파일로 저장해 Visual Studio에서 실행할 수 있어요.<br>온라인 채점은 서버 연결 후 사용할 수 있어요.'}</p></div></div></section>
+        <div class="run-bar"><div><span class="dot ${judgeReady ? '' : 'muted'}"></span>${judgeReady ? 'Windows · MSVC' : '온라인 채점 연결 준비 중'}</div><button class="button light" data-action="submit-sample" ${!judgeReady ? 'disabled' : ''}>${icon('play')} 예제 실행</button><button class="button light" data-action="counterexample" ${!judgeReady ? 'disabled' : ''}>${icon('search')} 반례 찾기</button><button class="button dark" data-action="submit" ${!judgeReady ? 'disabled' : ''}>제출하기 ${icon('arrow')}</button></div>
+        <section class="result-panel" aria-live="polite"><div class="panel-title">${icon('code')} 실행 결과</div><div id="result"><div class="empty-result"><span class="empty-icon">${icon('code')}</span><strong>${judgeReady ? '작성한 코드를 확인해 볼까요?' : '코드부터 차근차근 작성해 보세요'}</strong><p>${judgeReady ? '예제를 실행하거나 제출하면 결과가 여기에 표시돼요.' : '지금은 .cpp 파일로 저장해 Visual Studio에서 실행할 수 있어요.<br>온라인 채점은 서버 연결 후 사용할 수 있어요.'}</p></div></div></section>
       </section>
     </div>
     <input type="file" accept=".cpp,.cc,.cxx,.txt" id="source-file" hidden />
@@ -152,27 +136,27 @@ function problemPage(p) {
     extensions: [
       basicSetup, cpp(),
       syntaxHighlighting(HighlightStyle.define([
-        { tag: tags.keyword, color: '#b5cda0' },
-        { tag: [tags.typeName, tags.className], color: '#91c9b8' },
-        { tag: [tags.string, tags.special(tags.string)], color: '#dbdfa4' },
-        { tag: tags.number, color: '#e6be9e' },
-        { tag: tags.comment, color: '#99ae96', fontStyle: 'italic' },
-        { tag: [tags.meta, tags.processingInstruction], color: '#b6c7da' },
-        { tag: tags.function(tags.variableName), color: '#d8e9be' },
-        { tag: tags.operator, color: '#c1d0bb' },
+        { tag: tags.keyword, color: '#c4a5ff' },
+        { tag: [tags.typeName, tags.className], color: '#7dd3fc' },
+        { tag: [tags.string, tags.special(tags.string)], color: '#a9d992' },
+        { tag: tags.number, color: '#f7bf80' },
+        { tag: tags.comment, color: '#77869f', fontStyle: 'italic' },
+        { tag: [tags.meta, tags.processingInstruction], color: '#c4a5ff' },
+        { tag: tags.function(tags.variableName), color: '#8bbfff' },
+        { tag: tags.operator, color: '#b6c1d7' },
       ])),
       EditorView.contentAttributes.of({ 'aria-label': 'C++ 코드', spellcheck: 'false' }),
       EditorView.updateListener.of((update) => { if (update.docChanged) saveDraft(); }),
       EditorView.theme({
-        '&': { background: '#172923', color: '#e1eee4', fontSize: '13px', height: '100%' },
-        '.cm-content': { fontFamily: '"Cascadia Code", Consolas, monospace', padding: '18px 0', caretColor: '#d2efaa', minHeight: '420px' },
-        '.cm-gutters': { background: '#172923', color: '#778a7e', border: 'none', paddingRight: '10px' },
-        '.cm-activeLineGutter': { background: '#20382f' },
-        '.cm-activeLine': { background: '#20382f80' },
-        '.cm-cursor': { borderLeftColor: '#d2efaa' },
-        '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { background: '#415f50 !important' },
+        '&': { background: '#101522', color: '#d7e0ef', fontSize: '13px', height: '100%' },
+        '.cm-content': { fontFamily: '"Cascadia Code", Consolas, monospace', padding: '18px 0', caretColor: '#8daaff', minHeight: '420px' },
+        '.cm-gutters': { background: '#101522', color: '#65728a', border: 'none', paddingRight: '10px' },
+        '.cm-activeLineGutter': { background: '#202c46' },
+        '.cm-activeLine': { background: '#202c4680' },
+        '.cm-cursor': { borderLeftColor: '#8daaff' },
+        '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { background: '#35456d !important' },
         '.cm-scroller': { overflow: 'auto', lineHeight: '1.8' },
-        '.cm-tooltip': { background: '#fff', color: '#20382f' },
+        '.cm-tooltip': { background: '#fff', color: '#202c46' },
       }, { dark: true }),
     ],
     parent: document.querySelector('#editor'),
@@ -192,17 +176,29 @@ function problemPage(p) {
 }
 function historyPage() {
   activeProblem = null;
-  shell(`<main class="history-page"><div class="eyebrow">MY SUBMISSIONS</div><h1>한 번씩, 더 나아지기.</h1><p class="page-intro">내가 제출한 코드와 채점 결과를 모아 봐요.</p>
-    ${!session ? `<div class="large-empty">${icon('clock')}<h2>로그인하면 기록이 쌓여요</h2><p>${configured ? '초대된 GitHub 계정으로 로그인해 주세요.' : '로그인과 온라인 채점 연결을 준비 중이에요.<br>작성 중인 코드는 이 브라우저에 자동 저장됩니다.'}</p><button class="button dark" data-action="login">${icon('github')} GitHub 로그인</button></div>` : !history.length ? `<div class="large-empty">${icon('code')}<h2>아직 제출한 코드가 없어요</h2><p>첫 문제를 풀고 나만의 기록을 시작해 보세요.</p><a class="button dark" href="#/">문제 보러 가기 ${icon('arrow')}</a></div>` : `<div class="submission-list">${history.map((s) => `<button class="submission" data-action="show-result" data-id="${e(s.id)}"><span class="status-badge ${e(s.status)}">${e(statusNames[s.status] || s.status)}</span><span><strong>${e(findProblem(s.problem_id)?.title || s.problem_id)}</strong><small>${e(modeNames[s.mode] || s.mode)} · ${e(new Date(s.created_at).toLocaleString('ko-KR'))}</small></span>${icon('arrow')}</button>`).join('')}</div>`}
+  shell(`<main class="history-page"><div class="eyebrow">MY SUBMISSIONS</div><h1>내 제출 기록</h1><p class="page-intro">최근 제출 100개의 채점 결과를 확인하세요. 통과 현황은 전체 제출에서 집계합니다.</p>
+    ${!session ? `<div class="large-empty">${icon('clock')}<h2>로그인하면 기록이 쌓여요</h2><p>${configured ? '발급받은 아이디와 비밀번호로 로그인해 주세요.' : '로그인과 온라인 채점 연결을 준비 중이에요.<br>작성 중인 코드는 이 브라우저에 자동 저장됩니다.'}</p><button class="button dark" data-action="login">${icon('code')} 로그인</button></div>` : !history.length ? `<div class="large-empty">${icon('code')}<h2>아직 제출한 코드가 없어요</h2><p>첫 문제를 풀고 나만의 기록을 시작해 보세요.</p><a class="button dark" href="#/">문제 보러 가기 ${icon('arrow')}</a></div>` : `<div class="submission-list">${history.map((s) => `<button class="submission" data-action="show-result" data-id="${e(s.id)}"><span class="status-badge ${e(s.status)}">${e(statusNames[s.status] || s.status)}</span><span><strong>${e(findProblem(s.problem_id)?.title || s.problem_id)}</strong><small>${e(modeNames[s.mode] || s.mode)} · ${e(new Date(s.created_at).toLocaleString('ko-KR'))}</small></span>${icon('arrow')}</button>`).join('')}</div>`}
   </main>`, 'history');
 }
 function showDialog(title, body) {
   const dialog = document.querySelector('#dialog');
   dialog.innerHTML = `<div class="dialog-heading"><h2>${e(title)}</h2><button class="icon-button" data-close aria-label="닫기">${icon('close')}</button></div>${body}`;
   dialog.querySelectorAll('[data-close]').forEach((b) => b.onclick = closeDialog);
+  dialog.onclose=()=>{if(!dialog.open)dialog.replaceChildren();};
   dialog.showModal();
 }
-function closeDialog() { document.querySelector('#dialog').close(); }
+function closeDialog() { const dialog=document.querySelector('#dialog'); dialog.close(); dialog.replaceChildren(); }
+function showLogin() {
+ showDialog('로그인', `<p>운영자에게 받은 아이디와 비밀번호를 입력하세요.</p><form id="login-form" class="login-form"><label>아이디<input name="username" autocomplete="username" required maxlength="24" placeholder="발급받은 아이디"></label><label>비밀번호<input name="password" type="password" autocomplete="current-password" required maxlength="200"></label><p id="login-error" class="form-error" role="status">${configured?'':'인증 서버 연결을 준비 중입니다. 연결 후 발급 계정으로 이용할 수 있어요.'}</p><button class="button dark" ${configured?'':'disabled'}>로그인</button></form><p class="login-note">회원가입은 제공하지 않습니다. 계정 발급이나 비밀번호 재설정은 운영자에게 요청하세요.</p>`);
+ document.querySelector('#login-form').onsubmit=async ev=>{ev.preventDefault();const form=ev.currentTarget;const button=form.querySelector('button');button.disabled=true;const data=new FormData(form);try{await login(data.get('username'),data.get('password'));form.reset();closeDialog();}catch(error){document.querySelector('#login-error').textContent=error.message;}finally{button.disabled=false;}};
+}
+function showAccount() {
+ showDialog('내 계정', `<p>${e(member?.display_name || member?.username || '내 계정')}으로 로그인했어요.</p>${member?.must_change_password?'<p class="notice">처음 발급된 비밀번호를 변경한 뒤 제출할 수 있어요.</p>':''}<form id="password-form"><h3>비밀번호 변경</h3><label>현재 비밀번호<input name="currentPassword" type="password" autocomplete="current-password" required maxlength="200"></label><label>새 비밀번호<input name="newPassword" type="password" autocomplete="new-password" required minlength="12" maxlength="72"></label><label>새 비밀번호 확인<input name="confirmPassword" type="password" autocomplete="new-password" required minlength="12" maxlength="72"></label><p class="small-note">12자 이상으로 입력하세요. 변경하면 모든 기기에서 다시 로그인해야 합니다.</p><button class="button light">비밀번호 변경</button><p id="password-result" role="status"></p></form>${member?.role==='owner'?'<hr><h3>친구 계정 발급</h3><form id="create-account-form"><label>새 아이디<input name="username" required pattern="[a-z][a-z0-9_]{2,23}" minlength="3" maxlength="24" autocomplete="off" placeholder="friend01"></label><label>표시 이름<input name="displayName" required maxlength="30" autocomplete="off"></label><button class="button light">계정 발급</button><p id="create-account-result" role="status"></p></form>':''}<div class="dialog-actions"><button class="button light" id="logout">로그아웃</button><button class="button dark" data-close>닫기</button></div>`);
+ document.querySelector('#logout').onclick=async()=>{saveDraft();await supabase.auth.signOut();closeDialog();};
+ document.querySelector('#password-form').onsubmit=async ev=>{ev.preventDefault();const form=ev.currentTarget;const data=new FormData(form);const output=document.querySelector('#password-result');if(data.get('newPassword')!==data.get('confirmPassword')){output.textContent='새 비밀번호가 서로 달라요.';return;}const button=form.querySelector('button');button.disabled=true;try{await api('change_password',{currentPassword:data.get('currentPassword'),newPassword:data.get('newPassword')});form.reset();await supabase.auth.signOut({scope:'local'});closeDialog();toast('비밀번호를 변경했어요. 새 비밀번호로 다시 로그인해 주세요.');}catch(error){output.textContent=error.message;}finally{button.disabled=false;}};
+ const create=document.querySelector('#create-account-form');
+ if(create)create.onsubmit=async ev=>{ev.preventDefault();const data=new FormData(create);const button=create.querySelector('button');button.disabled=true;const output=document.querySelector('#create-account-result');try{const result=await api('create_account',{username:data.get('username'),displayName:data.get('displayName')});create.reset();output.innerHTML=`<span>이 창을 닫으면 초기 비밀번호를 다시 볼 수 없어요. 친구에게 직접 전달하세요.</span><pre class="credentials">아이디: ${e(result.username)}\n초기 비밀번호: ${e(result.password)}</pre>`;}catch(error){output.textContent=error.message;}finally{button.disabled=false;}};
+}
 function renderResult(result) {
   const error = ['compile_error','system_error'].includes(result.status);
   const tests = result.result?.tests || [];
@@ -227,7 +223,7 @@ function renderResult(result) {
 }
 async function submit(mode) {
   if (busy) return;
-  if (!session) { toast('제출하려면 GitHub 로그인이 필요해요.'); return; }
+  if (!session) { toast('제출하려면 로그인이 필요해요.'); return; }
   if (!editor.state.doc.toString().trim()) return toast('코드를 먼저 작성해 주세요.');
   busy = true;
   const version = routeVersion;
@@ -258,7 +254,7 @@ async function pollResult(id, version) {
   }, 6000);
 }
 async function refreshAccount() {
-  member = null; history = [];
+  member = null; history = []; solvedProblemIds = new Set();
   if (!session) return;
   const userId = session.user.id;
   try {
@@ -266,6 +262,7 @@ async function refreshAccount() {
     if (session?.user.id !== userId) return;
     member = data.member;
     history = data.submissions;
+    solvedProblemIds = new Set(data.solved || []);
   } catch (error) { toast(error.message); }
 }
 function route() {
@@ -277,25 +274,24 @@ function route() {
     if (p) problemPage(p);
     else { location.hash = '#/'; toast('문제를 찾지 못했어요.'); }
   } else if (parts[0] === 'history') historyPage();
-  else dashboard();
+  else if (parts[0] === 'set' && findCollection(parts[1])) dashboard(findCollection(parts[1]));
+  else if (parts[0] === 'learn') {
+    activeProblem=null;const lesson=findLesson(parts[1]);
+    shell(lesson?lessonHTML(lesson,session?.user.id):learningOverview(session?.user.id),'learn');
+    if(lesson)bindLesson(lesson,session?.user.id,toast);
+  } else dashboard();
 }
 document.addEventListener('click', async (event) => {
   const button = event.target.closest('[data-action]');
   if (!button) return;
   const action = button.dataset.action;
   try {
-    if (action === 'login') await login();
-    if (action === 'account') {
-      showDialog('내 계정', `<p>${e(member?.github_login || 'GitHub 계정')}으로 로그인했어요.</p>${member?.role === 'owner' ? '<p>친구의 GitHub 아이디를 입력하면 이 연습실에 초대합니다.</p><form id="invite-form"><label for="invite-login">GitHub 아이디</label><div class="input-row"><input id="invite-login" required pattern="[a-zA-Z0-9-]{1,39}" autocomplete="off" placeholder="친구의 GitHub 아이디"><button class="button dark">초대</button></div><p id="invite-result" role="status"></p></form>' : ''}<div class="dialog-actions"><button class="button light" id="logout">로그아웃</button><button class="button dark" data-close>닫기</button></div>`);
-      document.querySelector('[data-close].button').onclick = closeDialog;
-      document.querySelector('#logout').onclick = async () => { saveDraft(); await supabase.auth.signOut(); closeDialog(); };
-      const form = document.querySelector('#invite-form');
-      if (form) form.onsubmit = async (ev) => { ev.preventDefault(); const output = document.querySelector('#invite-result'); try { const r = await api('invite', { login: document.querySelector('#invite-login').value.trim() }); output.textContent = `${r.login}님을 초대했어요. 사이트 주소를 알려 주세요.`; } catch(error) { output.textContent = error.message; } };
-    }
+    if (action === 'login') showLogin();
+    if (action === 'account') showAccount();
     if (action === 'upload') document.querySelector('#source-file').click();
     if (action === 'download') {
       const profile = getLocal('cpp-room:filename', { student: '', name: '' });
-      showDialog('C++ 파일로 저장', `<p>Visual Studio에서 열 수 있도록 UTF-8 BOM과 Windows 줄바꿈으로 저장해요.</p><form id="download-form"><div class="input-row"><label>학번<input name="student" value="${e(profile.student)}" placeholder="학번" pattern="[0-9]{4,20}" required></label><label>이름<input name="name" value="${e(profile.name)}" placeholder="이름" maxlength="30" required></label></div><p class="small-note">파일명: 학번_이름_${Number(activeProblem.number)}.cpp</p><div class="dialog-actions"><button type="button" class="button light" data-close>취소</button><button class="button dark">${icon('down')} 파일 저장</button></div></form>`);
+      showDialog('C++ 파일로 저장', `<p>Visual Studio에서 열 수 있도록 UTF-8 BOM과 Windows 줄바꿈으로 저장해요.</p><form id="download-form"><div class="input-row"><label>학번<input name="student" value="${e(profile.student)}" placeholder="학번" pattern="[0-9]{4,20}" required></label><label>이름<input name="name" value="${e(profile.name)}" placeholder="이름" maxlength="30" required></label></div><p class="small-note">파일명: 학번_이름_${Number(activeProblem.number)}.cpp<br>저장 폴더: ${e(findCollection(activeProblem.collection)?.title)}<br>다른 세트의 같은 번호 파일과 겹치지 않게 세트별 폴더에 저장하세요.</p><div class="dialog-actions"><button type="button" class="button light" data-close>취소</button><button class="button dark">${icon('down')} 파일 저장</button></div></form>`);
       document.querySelector('#download-form').onsubmit = (ev) => {
         ev.preventDefault();
         const data = new FormData(ev.target), student = data.get('student'), name = data.get('name').trim();

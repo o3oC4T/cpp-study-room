@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory=$true)][string]$Repository,
     [Parameter(Mandatory=$true)][string]$WorkRoot,
     [Parameter(Mandatory=$true)][string]$CommitSha,
@@ -7,7 +7,7 @@ param(
 . (Join-Path $PSScriptRoot 'common.ps1')
 $manifest = Get-Content -Raw -Encoding UTF8 (Join-Path $Repository 'current.json') | ConvertFrom-Json
 if ($manifest.schema -ne 1 -or $manifest.submissionId -notmatch '^[0-9a-f-]{36}$' -or
-    $manifest.problemId -notmatch '^midterm-[1-4]$' -or $manifest.mode -notin @('sample','full','counterexample') -or
+    $manifest.problemId -notmatch '^(midterm-[1-4]|practice-[1-8]-[1-4])$' -or $manifest.mode -notin @('sample','full','counterexample') -or
     $manifest.source -ne "submissions/$($manifest.submissionId)/main.cpp" -or $CommitSha -notmatch '^[0-9a-f]{40}$') {
     throw 'Invalid coursework manifest'
 }

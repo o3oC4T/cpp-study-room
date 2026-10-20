@@ -1,13 +1,14 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.118.0';
 import { validateSubmission, validId, validateReport, terminal } from './validation.ts';
 import { github, course, commitSolution, readReport } from './github.ts';
+import { accountInput, accountEmail, initialPassword, passwordInput } from './accounts.ts';
 import { readBounded } from './bounded.ts';
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
   auth: { persistSession:false, autoRefreshToken:false },
 });
 const fields = 'id,problem_id,mode,status,created_at,finished_at,result';
-const json = (body: unknown, status: number, cors: HeadersInit) => Response.json(body, {status,headers:cors});
+const json = (body: unknown, status: number, cors: HeadersInit) => Response.json(body, {status,headers:{...cors,'Cache-Control':'no-store'}});
 
 Deno.serve(async (req) => {
   const allowed = Deno.env.get('SITE_URL');
@@ -26,17 +27,10 @@ Deno.serve(async (req) => {
     if (!bearer?.startsWith('Bearer ')) return json({error:'로그인이 필요합니다.'},401,cors);
     const {data:{user},error:authError} = await db.auth.getUser(bearer.slice(7));
     if (authError || !user) return json({error:'로그인이 만료됐어요. 다시 로그인해 주세요.'},401,cors);
-    // Identity data is supplied by the verified OAuth provider, not mutable user_metadata.
-    const githubIdentity = user.identities?.find((identity) => identity.provider === 'github');
-    const githubId = String(githubIdentity?.identity_data?.provider_id ?? githubIdentity?.identity_data?.sub ?? '');
-    if (!/^\d{1,20}$/.test(githubId)) return json({error:'GitHub 계정으로 로그인해 주세요.'},403,cors);
-    const {data:member,error:memberError} = await db.from('members').select('*').eq('github_id',githubId).eq('active',true).maybeSingle();
+    // Membership is keyed by the verified Auth UUID; roles never come from user_metadata.
+    const {data:member,error:memberError} = await db.from('members').select('*').eq('user_id',user.id).eq('active',true).maybeSingle();
     if (memberError) throw new Error('회원 정보를 불러오지 못했습니다.');
-    if (!member || (member.user_id && member.user_id !== user.id)) return json({error:'초대된 계정만 이용할 수 있어요. 운영자에게 GitHub 아이디를 알려 주세요.'},403,cors);
-    if (!member.user_id) {
-      const {error} = await db.from('members').update({user_id:user.id}).eq('github_id',githubId).is('user_id',null);
-      if (error) throw new Error('회원 연결에 실패했습니다.');
-    }
+    if (!member) return json({error:'운영자가 발급한 활성 계정만 이용할 수 있어요.'},403,cors);
     let raw;
     try { raw = new TextDecoder().decode(await readBounded(req.body,100000)); }
     catch { return json({error:'요청 크기 제한 초과'},413,cors); }
@@ -46,19 +40,35 @@ Deno.serve(async (req) => {
     if (body.action === 'profile') {
       const {data:submissions,error} = await db.from('submissions').select(fields).eq('user_id',user.id).order('created_at',{ascending:false}).limit(100);
       if (error) throw new Error('제출 기록을 불러오지 못했습니다.');
-      return json({member:{github_login:member.github_login,role:member.role},submissions},200,cors);
+      const {data:solved,error:solvedError}=await db.rpc('solved_problems',{p_user:user.id});
+      if(solvedError)throw Error('학습 현황을 불러오지 못했습니다.');
+      return json({solved:(solved||[]).map((s:any)=>s.problem_id),member:{username:member.username,display_name:member.display_name,role:member.role,must_change_password:member.must_change_password},submissions},200,cors);
     }
-    if (body.action === 'invite') {
-      if (member.role !== 'owner') return json({error:'운영자만 초대할 수 있습니다.'},403,cors);
-      if (typeof body.login !== 'string' || !/^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(body.login))
-        return json({error:'올바른 GitHub 아이디를 입력해 주세요.'},400,cors);
-      const account = await github(`/users/${encodeURIComponent(body.login)}`);
-      if (account.type !== 'User') return json({error:'개인 GitHub 계정만 초대할 수 있습니다.'},400,cors);
-      const {error} = await db.from('members').upsert({github_id:String(account.id),github_login:account.login}, {onConflict:'github_id',ignoreDuplicates:true});
-      if (error) throw new Error('초대에 실패했습니다.');
-      return json({login:account.login},200,cors);
+    if (body.action === 'change_password') {
+      const input=passwordInput(body);
+      const verifier=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,{auth:{persistSession:false,autoRefreshToken:false}});
+      const {data:verified,error:passwordError}=await verifier.auth.signInWithPassword({email:accountEmail(member.username),password:input.current});
+      if(passwordError||verified.user?.id!==user.id) return json({error:'현재 비밀번호를 확인해 주세요.'},400,cors);
+      try {
+        const {error}=await db.auth.admin.updateUserById(user.id,{password:input.next});
+        if(error)throw Error('비밀번호 변경에 실패했습니다.');
+        const {error:saveError}=await db.from('members').update({must_change_password:false}).eq('user_id',user.id);
+        if(saveError)throw Error('비밀번호는 변경되었지만 계정 상태 저장에 실패했습니다. 운영자에게 알려 주세요.');
+      } finally { await verifier.auth.signOut({scope:'global'}); }
+      return json({changed:true},200,cors);
+    }
+    if (body.action === 'create_account') {
+      if(member.role!=='owner'||member.must_change_password) return json({error:'비밀번호 변경을 마친 운영자만 계정을 발급할 수 있어요.'},403,cors);
+      const input=accountInput(body);
+      const password=initialPassword();
+      const {data:created,error}=await db.auth.admin.createUser({email:accountEmail(input.username),password,email_confirm:true});
+      if(error||!created.user) return json({error:'계정 발급에 실패했습니다. 이미 사용 중인 아이디인지 확인해 주세요.'},400,cors);
+      const {error:memberError}=await db.from('members').insert({user_id:created.user.id,username:input.username,display_name:input.displayName,role:'student',must_change_password:true});
+      if(memberError){await db.auth.admin.deleteUser(created.user.id);throw Error('회원 정보 저장에 실패했습니다.');}
+      return json({username:input.username,password},200,{...cors,'Cache-Control':'no-store'});
     }
     if (body.action === 'submit') {
+      if(member.must_change_password)return json({error:'내 계정에서 초기 비밀번호를 변경한 뒤 제출해 주세요.'},403,cors);
       if (Deno.env.get('JUDGE_ENABLED') !== 'true') return json({error:'온라인 채점을 준비 중입니다. 코드는 파일로 저장할 수 있어요.'},503,cors);
       const input = validateSubmission(body);
       const {data:submission,error} = await db.rpc('reserve_submission', {

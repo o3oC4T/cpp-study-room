@@ -1,4 +1,4 @@
-export const ids = new Set(['midterm-1','midterm-2','midterm-3','midterm-4']);
+export const ids = new Set([...Array.from({length:4},(_,i)=>`midterm-${i+1}`), ...Array.from({length:8},(_,s)=>Array.from({length:4},(_,i)=>`practice-${s+1}-${i+1}`)).flat()]);
 export const terminal = new Set(['accepted','wrong_answer','compile_error','runtime_error','time_limit','memory_limit','output_limit','system_error','counterexample_found','no_counterexample']);
 const testStatuses = new Set(['accepted','wrong_answer','runtime_error','time_limit','memory_limit','output_limit']);
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
