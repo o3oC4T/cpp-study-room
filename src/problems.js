@@ -1,5 +1,5 @@
 import practice from './practice.json' with { type: 'json' };
-const io = '#include <iostream>\nusing namespace std;\n\n';
+import {midtermStarters} from './midterm-starters.js';
 
 const originalProblems = [
   {
@@ -21,7 +21,8 @@ const originalProblems = [
       { input: 'pointer_v3.cpp\nN\n', output: '파일명 입력: 최종 버전입니까?(Y/N): \n파일 이름: pointer\n현재 버전: 3\n확장자: cpp\n업데이트된 파일명: pointer_v4.cpp\n' },
       { input: 'pointer_v5.cpp\nY\n', output: '파일명 입력: 최종 버전입니까?(Y/N): \n파일 이름: pointer\n현재 버전: 5\n확장자: cpp\n업데이트된 파일명: pointer_final.cpp\n' },
     ],
-    starter: '#include <iostream>\n#include <string>\nusing namespace std;\n\nchar choice;\nvoid updateFileInfo(string filename);\n\nint main()\n{\n\tstring filename;\n\tcout << "파일명 입력: ";\n\tcin >> filename;\n\tcout << "최종 버전입니까?(Y/N): ";\n\tcin >> choice;\n\tupdateFileInfo(filename);\n\treturn 0;\n}\n\nvoid updateFileInfo(string filename)\n{\n\t// 여기에 작성하세요.\n}\n',
+    starter: midtermStarters['midterm-1'],
+    starterNote: '원문에는 string ver와 int ver가 같은 이름으로 선언되어 있습니다. 원문 표기를 유지했으므로 풀이할 때 중복 선언을 수정하세요.',
   },
   {
     id: 'midterm-2', number: '02', title: '타이머 종료 시각',
@@ -32,8 +33,8 @@ const originalProblems = [
       '초가 60 이상이면 분으로, 분이 60 이상이면 시로 넘기고, 24시를 넘으면 다음 날의 시각으로 출력합니다.',
     ],
     requirements: [
-      'const int SIZE = 3과 int 배열 start, timer를 사용합니다.',
-      'void calculateEndTime(int start[], const int timer[], int size)를 구현합니다.',
+      '배열 크기는 3인 상수로 선언하고, 정수 배열 start와 timer에 시·분·초를 순서대로 저장합니다.',
+      'calculateEndTime 함수에 두 배열과 배열의 길이를 전달해 종료 시각을 계산합니다.',
       '계산한 결과는 start 배열에 저장하고 timer의 값은 바꾸지 않습니다.',
       '시작 시각을 먼저 출력한 뒤 함수를 호출하고 종료 시각을 출력합니다.',
     ],
@@ -42,7 +43,8 @@ const originalProblems = [
       { input: '13 50 50\n1 20 0\n', output: '타이머 시작 시각(시 분 초): 타이머 지속 시간(시 분 초): \n시작 시각: 13시 50분 50초\n종료 시각: 15시 10분 50초\n' },
       { input: '23 55 10\n0 30 30\n', output: '타이머 시작 시각(시 분 초): 타이머 지속 시간(시 분 초): \n시작 시각: 23시 55분 10초\n종료 시각: 0시 25분 40초\n' },
     ],
-    starter: io + 'void calculateEndTime(int start[], const int timer[], int size)\n{\n\t// 여기에 작성하세요.\n}\n\nint main()\n{\n\tconst int SIZE = 3;\n\tint start[SIZE], timer[SIZE];\n\n\tcout << "타이머 시작 시각(시 분 초): ";\n\tfor (int i = 0; i < SIZE; i++)\n\t\tcin >> start[i];\n\tcout << "타이머 지속 시간(시 분 초): ";\n\tfor (int i = 0; i < SIZE; i++)\n\t\tcin >> timer[i];\n\n\t// 시작 시각 출력, 함수 호출, 종료 시각 출력을 작성하세요.\n\treturn 0;\n}\n',
+    starter: midtermStarters['midterm-2'],
+    starterNote: '작성 조건은 calculateEndTime, 제공 코드는 calculateEnd로 표기되어 있습니다. 원문 표기를 유지했으므로 풀이할 때 함수 이름과 선언·호출 관계를 맞추세요.',
   },
   {
     id: 'midterm-3', number: '03', title: '러닝 기록 관리',
@@ -67,7 +69,8 @@ const originalProblems = [
         output: '러너 수: \n[러너 1]\n이름: 구간 수: 1구간 거리(km): 시간(시 분 초): 2구간 거리(km): 시간(시 분 초): \n[러너 2]\n이름: 구간 수: 1구간 거리(km): 시간(시 분 초): 2구간 거리(km): 시간(시 분 초): 3구간 거리(km): 시간(시 분 초): \n======== 러닝 기록 ========\n\n[ID: 1001] Alice\n1구간: 1.0km / 390초\n2구간: 2.0km / 670초\n\n총 거리: 3.0km\n총 시간: 1060초\n평균 페이스: 5분 53초/km\n\n\n[ID: 1002] Bob\n1구간: 1.4km / 585초\n2구간: 1.3km / 610초\n3구간: 1.2km / 615초\n\n총 거리: 3.9km\n총 시간: 1810초\n평균 페이스: 7분 44초/km\n\n',
       },
     ],
-    starter: '#include <iostream>\n#include <iomanip>\nusing namespace std;\n\nstruct Record\n{\n\tdouble distance;\n\tint time;\n};\n\nstruct Runner\n{\n\tint id;\n\tstring name;\n\tint count;\n\tRecord* records;\n};\n\nvoid inputRunner(Runner* runner)\n{\n\t// 여기에 작성하세요.\n}\n\nvoid printRunner(const Runner* runner)\n{\n\t// 여기에 작성하세요.\n}\n\nint main()\n{\n\t// 동적 할당, 입력, 출력, 메모리 해제를 작성하세요.\n\treturn 0;\n}\n',
+    starter: midtermStarters['midterm-3'],
+    starterNote: '원문에 제공된 구조체, main, 두 함수를 그대로 옮겼습니다. 헤더와 필요한 함수 선언은 직접 작성하세요.',
   },
   {
     id: 'midterm-4', number: '04', title: '티켓 요금과 예외 처리',
@@ -82,7 +85,7 @@ const originalProblems = [
       '나이가 0 이하이면 int, 티켓 수가 1~5장 범위를 벗어나면 char 예외를 던집니다.',
       'int applyDiscount(int total, char code)에서 static int 변수로 할인 금액을 저장합니다.',
       '할인 코드가 N 또는 D가 아니면 float 예외를 던집니다.',
-      'main에서는 catch(float)와 catch(...)로 코드 오류와 입력 오류를 구분합니다.',
+      'main에서 두 함수를 차례로 호출하고, 할인 코드 오류만 명시적으로 처리합니다.',
     ],
     note: '0세도 입력 오류로 처리합니다. 과제 본문의 “0 미만”과 실행 예시가 달라, 이 연습실은 실행 예시를 따릅니다.',
     input: '정수 나이, 정수 티켓 수, 문자 할인 코드를 순서대로 입력합니다. 나이와 티켓 수 오류를 할인 코드 오류보다 먼저 검사합니다.',
@@ -91,7 +94,8 @@ const originalProblems = [
       { input: '0\n2\nN\n', output: '나이 입력: 티켓 수 입력: 할인 코드(N/D): \n[입력 오류] 올바른 나이/티켓 수(1~5장)를 입력하세요.\n' },
       { input: '20\n1\nX\n', output: '나이 입력: 티켓 수 입력: 할인 코드(N/D): \n[코드 오류] 올바른 할인 코드를 입력하세요.\n' },
     ],
-    starter: io + 'int ticketPrice(int age, int count)\n{\n\t// 여기에 작성하세요.\n\treturn 0;\n}\n\nint applyDiscount(int total, char code)\n{\n\t// 여기에 작성하세요.\n\treturn total;\n}\n\nint main()\n{\n\tint age, count;\n\tchar code;\n\tcout << "나이 입력: ";\n\tcin >> age;\n\tcout << "티켓 수 입력: ";\n\tcin >> count;\n\tcout << "할인 코드(N/D): ";\n\tcin >> code;\n\tcout << endl;\n\n\t// try, catch(float), catch(...)를 작성하세요.\n\treturn 0;\n}\n',
+    starter: midtermStarters['midterm-4'],
+    starterNote: '원문에는 함수와 main만 제공되어 있습니다. 필요한 헤더는 직접 작성하세요.',
   },
 ];
 

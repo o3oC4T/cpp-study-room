@@ -110,6 +110,7 @@ function problemPage(p) {
           ${p.description.map((s) => `<p>${e(s)}</p>`).join('')}
           ${p.note ? `<aside class="notice">${e(p.note)}</aside>` : ''}
           <h3>작성 조건</h3><ul class="requirements">${p.requirements.map((r) => `<li>${e(r)}</li>`).join('')}</ul>
+          ${p.starterNote ? `<h3>제공 코드</h3><p class="small-note">PDF에서 검은색으로 가려진 부분은 <code>/* 빈칸 */</code>으로 표시했습니다. 해당 주석과 비어 있는 부분을 완성하세요.</p><p class="small-note">${e(p.starterNote)}</p>` : ''}
           <h3>입력</h3><p>${e(p.input)}</p>
           <h3>입출력 예제</h3>
           <p class="small-note">출력에는 프로그램이 출력한 문자만 표시합니다. 입력한 값은 자동으로 되풀이되지 않아 입력 안내 문구가 붙어 보일 수 있어요.</p>
