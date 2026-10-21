@@ -8,7 +8,7 @@ export function usagePage({member,shell,api,isCurrent}) {
     return;
   }
   shell(`<main class="history-page"><div class="page-heading"><div><div class="eyebrow">OWNER ONLY</div><h1>사용 기록</h1><p>회원의 로그인, 계정 변경, 채점 제출과 결과를 확인하세요. 시간은 한국 기준입니다.</p></div></div>
-    <form id="usage-filter" class="usage-filter"><label>회원 아이디<input name="username" placeholder="전체 회원 · 예: friend01" maxlength="24" autocomplete="off"></label><label>기록 종류<select name="event"><option value="">전체 기록</option>${Object.entries(eventNames).map(([value,label])=>`<option value="${value}">${label}</option>`).join('')}</select></label><button class="button light">조회 · 새로고침</button></form>
+    <form id="usage-filter" class="usage-filter"><label>회원 아이디<input name="username" placeholder="전체 회원 · 아이디 입력" maxlength="24" autocomplete="off"></label><label>기록 종류<select name="event"><option value="">전체 기록</option>${Object.entries(eventNames).map(([value,label])=>`<option value="${value}">${label}</option>`).join('')}</select></label><button class="button light">조회 · 새로고침</button></form>
     <p id="usage-message" role="status" class="small-note"></p>
     <div class="card usage-table-wrap"><table class="usage-table"><thead><tr><th>시간</th><th>회원</th><th>활동</th><th>문제 · 채점 방식</th><th>결과</th></tr></thead><tbody id="usage-rows"></tbody></table></div>
     <button id="usage-more" class="button light" hidden>이전 기록 더 보기</button>

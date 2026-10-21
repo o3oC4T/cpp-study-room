@@ -11,8 +11,8 @@ declare
   item public.submissions;
   duplicate public.submissions;
 begin
-  select user_id into learner from public.members where username='friend01';
-  select user_id into other_learner from public.members where username='friend02';
+  select user_id into learner from public.members where role='student' order by created_at,user_id limit 1;
+  select user_id into other_learner from public.members where role='student' and user_id<>learner order by created_at,user_id limit 1;
   if learner is null or other_learner is null then
     raise exception 'Two provisioned test targets are required.';
   end if;
