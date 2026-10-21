@@ -29,6 +29,8 @@ const icons = {
 const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] || icons.code}</svg>`;
 const app = document.querySelector('#app');
 let editor, activeProblem, session, member, history = [], currentResult, polling, routeVersion = 0, busy = false;
+let pollGeneration = 0, pollInFlight = false, pollFailures = 0;
+const isPending = (record) => ['preparing', 'queued', 'running'].includes(record.status);
 const storageKey = (id) => `cpp-room:draft:${session?.user.id || 'guest'}:${id}`;
 const draft = (id) => getLocal(storageKey(id));
 let solvedProblemIds = new Set();
@@ -52,7 +54,6 @@ function cleanup() {
   saveDraft();
   editor?.destroy();
   editor = null;
-  clearTimeout(polling);
   currentResult = null;
 }
 function shell(content, page = 'problems') {
@@ -164,6 +165,9 @@ function problemPage(p) {
     ],
     parent: document.querySelector('#editor'),
   });
+  const latest = history.find(s => s.problem_id === p.id);
+  if (latest) updateResultViews(latest);
+  updateSubmitButtons();
   document.querySelector('#source-file').addEventListener('change', async (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -205,18 +209,24 @@ function showAccount() {
 function renderResult(result) {
   const error = ['compile_error','system_error'].includes(result.status);
   const tests = result.result?.tests || [];
-  const pending = ['queued','preparing','running'].includes(result.status);
+  const pending = isPending(result);
+  const elapsed = Math.max(0, Math.floor((Date.now() - (Date.parse(result.created_at) || Date.now())) / 1000));
+  const progress = {
+    preparing: '제출 내용을 접수하고 있어요.',
+    queued: '접수 완료. Windows 채점기가 시작되기를 기다리고 있어요.',
+    running: 'Windows 채점기가 코드를 컴파일하고 실행하고 있어요.',
+  };
   const details = tests.map((t,i) => {
     const visible = t.sample || t.counterexample;
     const diff = t.expected !== undefined && t.actual !== undefined ? firstDifference(t.expected,t.actual) : null;
-    const input = t.counterexample ? `<div class="counter-input"><div class="sample-label">틀리는 입력<button class="text-button" data-action="copy-counter">입력 복사</button></div><pre>${e(t.input)}</pre></div>` : '';
+    const input = t.counterexample ? `<div class="counter-input"><div class="sample-label">틀리는 입력<button class="text-button" data-action="copy-counter" data-id="${e(result.id)}">입력 복사</button></div><pre>${e(t.input)}</pre></div>` : '';
     const output = visible && t.actual !== undefined ? `<div class="diff-grid"><div><b>정답 출력</b><pre>${e(t.expected ?? '')}</pre></div><div><b>내 출력</b><pre>${e(t.actual)}</pre></div></div>
       ${t.truncated ? '<p class="small-note">출력이 길어 앞의 4,096자만 표시합니다.</p>' : ''}
       ${diff ? `<p class="small-note">${diff.line}행 ${diff.column}열에서 처음 달라요. 공백과 빈 줄도 확인해 보세요.</p>` : ''}` : '<p class="small-note">비공개 테스트의 입력과 출력은 표시하지 않습니다.</p>';
     return `<details class="test-result" ${t.status !== 'accepted' ? 'open' : ''}><summary><span>${t.counterexample ? '찾은 반례' : `${t.sample ? '예제' : '테스트'} ${i+1}`}</span><span class="${t.status === 'accepted' ? 'success-text' : 'error-text'}">${e(statusNames[t.status] || t.status)}</span></summary>${input}${output}</details>`;
   }).join('');
   return `<div class="result-content"><div class="result-heading"><span class="status-badge ${e(result.status)}">${e(statusNames[result.status] || result.status)}</span><span>${e(modeNames[result.mode] || result.mode)}</span></div>
-    ${pending ? '<p class="small-note"><span class="spinner"></span> Windows 채점 환경을 준비하고 있어요. 시작까지 몇 분 걸릴 수 있습니다.</p>' : ''}
+    ${pending ? `<p class="small-note"><span class="spinner"></span> ${progress[result.status]}</p><p class="small-note">접수 후 ${elapsed}초 · 결과를 자동으로 확인합니다.</p>${pollFailures ? '<p class="notice">결과 연결이 잠시 끊겼어요. 제출은 유지되며 자동으로 다시 확인합니다.</p>' : ''}` : ''}
     ${error ? `<pre class="compiler-output">${e(result.result?.message || '채점 결과를 불러올 수 없습니다.')}</pre>` : ''}
     ${result.mode === 'counterexample' && !pending && !error ? `<p class="small-note">${Number(result.result?.tested || 0)}개 입력을 검사했어요.</p>` : ''}
     ${details}
@@ -225,46 +235,103 @@ function renderResult(result) {
   </div>`;
 }
 async function submit(mode) {
-  if (busy) return;
+  if (busy || history.some(isPending)) return;
   if (!session) { toast('제출하려면 로그인이 필요해요.'); return; }
   if (!editor.state.doc.toString().trim()) return toast('코드를 먼저 작성해 주세요.');
   busy = true;
   const version = routeVersion;
+  const generation = pollGeneration;
+  updateSubmitButtons();
+  document.querySelector('#result').innerHTML = '<div class="result-content"><span class="status-badge preparing">접수 중</span><p class="small-note"><span class="spinner"></span> 제출 내용을 서버에 보내고 있어요.</p></div>';
   try {
     const result = await api('submit', { problemId: activeProblem.id, mode, code: editor.state.doc.toString(), requestId: crypto.randomUUID() });
-    history = [result, ...history.filter((s) => s.id !== result.id)];
-    if (version === routeVersion) {
-      currentResult = result;
-      document.querySelector('#result').innerHTML = renderResult(result);
-      if (['queued','preparing','running'].includes(result.status)) pollResult(result.id, version);
+    if (generation !== pollGeneration) return;
+    rememberResult(result);
+    scheduleResults();
+  } catch (error) {
+    if (generation !== pollGeneration) return;
+    toast(error.message);
+    if (version === routeVersion) document.querySelector('#result').innerHTML = `<div class="result-content"><p class="notice">${e(error.message)}</p><p class="small-note">서버에 접수된 제출이 있는지 확인합니다.</p></div>`;
+    await refreshAccount();
+    if (generation === pollGeneration) {
+      const latest = history.find(s => s.problem_id === activeProblem?.id);
+      if (latest) updateResultViews(latest);
+      scheduleResults(0);
     }
-  } catch (error) { toast(error.message); }
-  finally { busy = false; }
+  } finally {
+    if (generation === pollGeneration) { busy = false; updateSubmitButtons(); }
+  }
 }
-async function pollResult(id, version) {
-  if (version !== routeVersion) return;
+function updateSubmitButtons() {
+  document.querySelectorAll('[data-action="submit"], [data-action="submit-sample"], [data-action="counterexample"]').forEach(button => {
+    button.disabled = !judgeReady || busy || history.some(isPending);
+  });
+}
+function updateResultViews(result) {
+  if (activeProblem?.id === result.problem_id && (!currentResult || currentResult.id === result.id || Date.parse(result.created_at) >= Date.parse(currentResult.created_at))) {
+    currentResult = result;
+    const target = document.querySelector('#result');
+    if (target) target.innerHTML = renderResult(result);
+  }
+  const dialog = document.querySelector('#dialog-result');
+  if (dialog?.dataset.id === result.id) dialog.innerHTML = renderResult(result);
+  document.querySelectorAll('[data-action="show-result"]').forEach(button => {
+    if (button.dataset.id !== result.id) return;
+    const badge = button.querySelector('.status-badge');
+    badge.className = `status-badge ${result.status}`;
+    badge.textContent = statusNames[result.status] || result.status;
+  });
+  updateSubmitButtons();
+}
+function rememberResult(result) {
+  history = [result, ...history.filter(s => s.id !== result.id)].sort((a,b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+  if (result.mode === 'full' && result.status === 'accepted') solvedProblemIds.add(result.problem_id);
+  updateResultViews(result);
+}
+function resetPolling() {
+  clearTimeout(polling); polling = null;
+  pollGeneration++; pollInFlight = false; pollFailures = 0;
+}
+function scheduleResults(delay = 6000) {
+  if (!session || pollInFlight || !history.some(isPending)) return;
+  if (polling && delay !== 0) return;
+  clearTimeout(polling);
+  const generation = pollGeneration;
   polling = setTimeout(async () => {
-    if (version !== routeVersion) return;
+    polling = null;
+    if (generation !== pollGeneration) return;
+    pollInFlight = true;
     try {
-      const result = await api('result', { id });
-      history = [result, ...history.filter((s) => s.id !== id)];
-      if (version !== routeVersion) return;
-      currentResult = result;
-      const target = document.querySelector('#result');
-      if (target) target.innerHTML = renderResult(result);
-      if (['queued','preparing','running'].includes(result.status)) pollResult(id, version);
-    } catch (error) { toast(error.message); }
-  }, 6000);
+      for (const record of history.filter(isPending)) {
+        const result = await api('result', {id:record.id});
+        if (generation !== pollGeneration) return;
+        pollFailures = 0;
+        rememberResult(result);
+      }
+    } catch {
+      if (generation !== pollGeneration) return;
+      pollFailures++;
+      history.filter(isPending).forEach(updateResultViews);
+    } finally {
+      if (generation === pollGeneration) {
+        pollInFlight = false;
+        scheduleResults(Math.min(30000, 6000 * 2 ** Math.min(pollFailures, 3)));
+      }
+    }
+  }, delay);
 }
 async function refreshAccount() {
-  member = null; history = []; solvedProblemIds = new Set();
   if (!session) return;
   const userId = session.user.id;
+  const generation = pollGeneration;
   try {
     const data = await api('profile');
-    if (session?.user.id !== userId) return;
+    if (session?.user.id !== userId || generation !== pollGeneration) return;
     member = data.member;
-    history = data.submissions;
+    history = data.submissions.map(record => {
+      const known = history.find(s => s.id === record.id);
+      return known && !isPending(known) && isPending(record) ? known : record;
+    });
     solvedProblemIds = new Set(data.solved || []);
   } catch (error) { toast(error.message); }
 }
@@ -313,25 +380,37 @@ document.addEventListener('click', async (event) => {
       await navigator.clipboard.writeText(activeProblem.samples[Number(button.dataset.index)][action === 'copy-input' ? 'input' : 'output']);
       toast('복사했어요.');
     }
-    if (action === 'copy-counter') { await navigator.clipboard.writeText(currentResult.result.tests[0].input); toast('반례 입력을 복사했어요.'); }
+    if (action === 'copy-counter') { const record=history.find(s=>s.id===button.dataset.id);await navigator.clipboard.writeText(record.result.tests.find(t=>t.counterexample).input);toast('반례 입력을 복사했어요.'); }
     if (action === 'counterexample') await submit('counterexample');
     if (action === 'submit') await submit('full');
     if (action === 'submit-sample') await submit('sample');
     if (action === 'show-result') {
-      const record = await api('result', { id: button.dataset.id });
-      currentResult = record;
-      showDialog(findProblem(record.problem_id)?.title || '제출 결과', renderResult(record));
+      const record = history.find(s => s.id === button.dataset.id);
+      if (!record) return;
+      showDialog(findProblem(record.problem_id)?.title || '제출 결과', `<div id="dialog-result" data-id="${e(record.id)}">${renderResult(record)}</div>`);
+      scheduleResults(0);
     }
   } catch (error) { toast(error.message); }
 });
 window.addEventListener('hashchange', route);
 window.addEventListener('pagehide', saveDraft);
+window.addEventListener('online', () => scheduleResults(0));
+document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleResults(0); });
 route();
 if (supabase) {
   supabase.auth.onAuthStateChange((event, next) => {
-    if (event === 'TOKEN_REFRESHED') { session = next; return; }
+    if (next?.user.id === session?.user.id && next && ['TOKEN_REFRESHED','SIGNED_IN'].includes(event)) {
+      session = next; scheduleResults(0); return;
+    }
     saveDraft(); editor?.destroy(); editor = null;
+    resetPolling(); busy = false;
     session = next;
-    setTimeout(async () => { await refreshAccount(); route(); }, 0);
+    member = null; history = []; solvedProblemIds = new Set();
+    const generation = pollGeneration;
+    setTimeout(async () => {
+      await refreshAccount();
+      if (generation !== pollGeneration) return;
+      route(); scheduleResults(0);
+    }, 0);
   });
 }
