@@ -1,4 +1,5 @@
 import {exceptionLesson} from './exception-lesson.js';
+import {matrixWalkthrough} from './matrix-walkthrough.js';
 const ch3='Do it! C++ 완전 정복_03차시(Ch03).pdf';
 export const lessons=[
  {id:'pointer-value',track:'포인터',number:'01',title:'주소와 값 구분하기',summary:'&로 주소를 얻고, *로 그 주소의 값을 읽고 바꿉니다.',source:`${ch3} · PDF 4~9쪽`,minutes:10,
@@ -74,7 +75,7 @@ export const lessons=[
  sections:[
   {title:'포인터 멤버와 실제 배열은 별도 공간입니다',text:'struct Group { int count; int* scores; };에서 Group 배열을 만든 것만으로 scores가 가리킬 정수 배열까지 생기지는 않습니다. 각 그룹마다 인원 수를 알고 난 뒤 점수 배열을 따로 할당해야 합니다.',code:'struct Group { int count; int* scores; };\nGroup* groups = new Group[2];\ngroups[0].count = 2;\ngroups[1].count = 1;\nfor (int i = 0; i < 2; i++)\n    groups[i].scores = new int[groups[i].count];\nfor (int i = 0; i < 2; i++) delete[] groups[i].scores;\ndelete[] groups;',output:''},
   {title:'주소를 잃기 전에 안쪽부터 해제합니다',text:'먼저 groups[i].scores를 각각 delete[]한 뒤 groups를 delete[]합니다. 기본 포인터 멤버는 자신이 가리키는 공간을 자동으로 해제하지 않습니다. 바깥 배열을 먼저 지우면 안쪽 주소를 정상적으로 읽을 수 없게 됩니다.',code:'struct Group { int count; int* scores; };\nGroup* groups = new Group[1];\ngroups[0].count = 2;\ngroups[0].scores = new int[2];\ngroups[0].scores[0] = 80;\ngroups[0].scores[1] = 90;\ncout << groups[0].scores[0] + groups[0].scores[1] << endl;\ndelete[] groups[0].scores;\ndelete[] groups;',output:'170\n'},
-  {title:'2차원 배열도 행별 할당이면 행별 해제입니다',text:'int**로 행 포인터 배열을 만들고 각 행을 new int[cols]로 만들었다면, 각 행을 해제한 다음 행 포인터 배열을 해제합니다. 하나의 연속 공간으로 할당한 경우와 섞어서 생각하지 마세요. 이 연습은 행을 따로 할당하는 방식입니다.',code:'int rows = 2, cols = 3;\nint** matrix = new int*[rows];\nfor (int i = 0; i < rows; i++) matrix[i] = new int[cols];\nfor (int i = 0; i < rows; i++) delete[] matrix[i];\ndelete[] matrix;',output:''}],
+  {title:'2차원 배열도 행별 할당이면 행별 해제입니다',text:'int**로 행 포인터 배열을 만들고 각 행을 new int[cols]로 만들었다면, 각 행을 해제한 다음 행 포인터 배열을 해제합니다. 하나의 연속 공간으로 할당한 경우와 섞어서 생각하지 마세요. 이 연습은 행을 따로 할당하는 방식입니다.',code:'int rows = 2, cols = 3;\nint** matrix = new int*[rows];\nfor (int i = 0; i < rows; i++) matrix[i] = new int[cols];\nfor (int i = 0; i < rows; i++) delete[] matrix[i];\ndelete[] matrix;',output:'',walkthrough:matrixWalkthrough}],
  frames:[
   {code:'Group* groups = new Group[2];',cells:[['groups[0].scores','미초기화'],['groups[1].scores','미초기화']],note:'포인터 멤버만 있고 점수 배열은 아직 없습니다.'},
   {code:'각 그룹의 scores = new int[count];',cells:[['groups[0].scores','→ 점수 배열 A'],['groups[1].scores','→ 점수 배열 B'],['A','2개 원소'],['B','1개 원소']],note:'바깥 1개와 안쪽 2개, 총 3번 할당한 상태입니다.'},

@@ -3,6 +3,23 @@ import {lessons} from './lessons.js';
 import {findProblem} from './problems.js';
 const key=(user,id)=>`cpp-room:lesson:${user || 'guest'}:${id}`;
 export const lessonProgress=(user,id)=>getLocal(key(user,id),{answers:{},blank:false,complete:false});
+function matrixHTML(m) {
+ const pointerState=m.pointers==='absent'?'matrix 선언 전':m.pointers==='released'?'matrix → 해제된 공간 (접근 불가)':'matrix (int**) → 행 포인터 배열';
+ return `<div class="matrix-diagram" aria-label="행별 할당과 해제 상태">
+  <div class="matrix-summary"><code>${e(pointerState)}</code><span>남은 동적 배열 ${m.allocations}개</span></div>
+  <div class="matrix-layout">
+   <div class="matrix-panel matrix-pointers ${m.pointers==='released'?'is-released':''} ${m.focus==='pointers'?'is-focused':''}" data-state="${m.pointers}"><h4>행 포인터 배열</h4><p>int*를 담는 2칸</p>
+    ${m.pointers==='allocated'?m.rows.map((state,i)=>`<div class="matrix-pointer-slot"><code>matrix[${i}]</code><span>${state==='absent'?'미초기화':state==='released'?`→ 해제된 ${i}행 (사용 불가)`:`→ ${i}행의 첫 정수`}</span></div>`).join(''):`<p class="matrix-state">${m.pointers==='absent'?'아직 할당하지 않음':'포인터 2칸 해제됨'}</p>`}
+   </div>
+   <div class="matrix-rows">${m.rows.map((state,i)=>`<div class="matrix-panel matrix-row ${state==='released'?'is-released':''} ${m.focus===`row-${i}`?'is-focused':''}" data-state="${state}"><h4>${i}행 · int 3칸</h4>${state==='allocated'?`<div class="matrix-values">${[0,1,2].map(j=>`<div class="matrix-value"><code>[${i}][${j}]</code><span>미초기화</span></div>`).join('')}</div>`:`<p class="matrix-state">${state==='absent'?'아직 할당하지 않음':'정수 3칸 해제됨'}</p>`}</div>`).join('')}</div>
+  </div></div>`;
+}
+function frameHTML(f) {
+ return `<pre class="memory-code">${e(f.code)}</pre>${f.stepLabel?`<p class="walkthrough-step-label">${e(f.stepLabel)}</p>`:''}${f.matrix?matrixHTML(f.matrix):`${f.pointer?`<div class="memory-pointer">${e(f.pointer)}</div>`:''}<div class="memory-cells ${f.released?'released':''}">${f.cells.map(([name,value])=>`<div class="memory-cell ${name===f.target?'pointed':''}"><small>${e(name)}</small><strong>${e(value)}</strong></div>`).join('')}</div>`}<p class="memory-note">${e(f.note)}</p>`;
+}
+function sectionWalkthroughHTML(w) {
+ return `<div class="section-walkthrough" id="${e(w.id)}" role="group" aria-labelledby="${e(w.id)}-title"><div class="section-kicker">MEMORY WALKTHROUGH</div><h3 id="${e(w.id)}-title">${e(w.title)}</h3><p>${e(w.description)}</p><div data-frame aria-live="polite"></div><div class="memory-controls"><button class="button light" data-prev>← 이전 단계</button><span data-position></span><button class="button dark" data-next>다음 단계 →</button></div></div>`;
+}
 export function learningOverview(user) {
  return `<main class="page-content learning-home"><div class="page-heading"><div><div class="eyebrow">LEARN BY DOING</div><h1>개념부터 직접 연결하기</h1><p>PDF의 개념을 읽고, 값과 실행 흐름을 따라가고, 코드로 확인하세요.</p></div><span class="pill">${lessons.length}개 단원 · ${lessons.filter(l=>lessonProgress(user,l.id).complete).length}개 완료</span></div>
  <div class="learning-path"><span>01 주소와 값</span><b>→</b><span>02 배열과 함수</span><b>→</b><span>03 구조체</span><b>→</b><span>04 동적 할당</span><b>→</b><span>05 기록 처리</span><b>→</b><span>06 중첩 메모리</span><b>→</b><span>07 예외 처리</span></div>
@@ -13,7 +30,7 @@ export function lessonHTML(l,user) {
  const state=lessonProgress(user,l.id);
  return `<main class="page-content lesson-page"><a class="back-link" href="#/learn">← 개념 학습</a><div class="page-heading"><div><div class="eyebrow">LESSON ${l.number} / ${e(l.track)}</div><h1>${e(l.title)}</h1><p>${e(l.summary)}</p></div><span class="pill">약 ${l.minutes}분</span></div>
  <div class="lesson-layout"><article class="lesson-content">
- ${l.sections.map((s,i)=>`<section class="lesson-section"><div class="section-kicker">${String(i+1).padStart(2,'0')}</div><h2>${e(s.title)}</h2><p>${e(s.text)}</p><div class="code-label">${s.full?'실행 가능한 전체 코드':'main() 안에서 실행할 코드 · iostream 포함, std 사용'}</div><pre class="lesson-code"><code>${e(s.code)}</code></pre>${s.output!==undefined?`<details class="example-output"><summary>실행 결과 확인</summary><pre>${e(s.output||'(출력 없음)')}</pre></details>`:''}${s.table?`<div class="lesson-table-wrap"><table class="lesson-table"><thead><tr>${s.table.headers.map(h=>`<th scope="col">${e(h)}</th>`).join('')}</tr></thead><tbody>${s.table.rows.map(row=>`<tr>${row.map(cell=>`<td>${e(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`:''}${s.note?`<p class="notice">${e(s.note)}</p>`:''}</section>`).join('')}
+ ${l.sections.map((s,i)=>`<section class="lesson-section"><div class="section-kicker">${String(i+1).padStart(2,'0')}</div><h2>${e(s.title)}</h2><p>${e(s.text)}</p><div class="code-label">${s.full?'실행 가능한 전체 코드':'main() 안에서 실행할 코드 · iostream 포함, std 사용'}</div><pre class="lesson-code"><code>${e(s.code)}</code></pre>${s.output!==undefined?`<details class="example-output"><summary>실행 결과 확인</summary><pre>${e(s.output||'(출력 없음)')}</pre></details>`:''}${s.table?`<div class="lesson-table-wrap"><table class="lesson-table"><thead><tr>${s.table.headers.map(h=>`<th scope="col">${e(h)}</th>`).join('')}</tr></thead><tbody>${s.table.rows.map(row=>`<tr>${row.map(cell=>`<td>${e(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`:''}${s.note?`<p class="notice">${e(s.note)}</p>`:''}${s.walkthrough?sectionWalkthroughHTML(s.walkthrough):''}</section>`).join('')}
  <section class="lesson-section memory-lab"><div class="section-kicker">${l.scenarios?'EXECUTION FLOW':'MEMORY WALKTHROUGH'}</div><h2>한 줄씩 따라가기</h2><p>${e(l.walkthroughDescription || '‘다음 단계’를 눌러 값과 연결 대상의 변화를 확인하세요.')}</p>${l.scenarios?`<div class="walkthrough-selector"><label for="walkthrough-scenario">실행 예시</label><select id="walkthrough-scenario">${l.scenarios.map((s,i)=>`<option value="${i}">${e(s.label)}</option>`).join('')}</select></div>`:''}<div id="memory-frame" aria-live="polite"></div><div class="memory-controls"><button class="button light" id="memory-prev">← 이전 단계</button><span id="memory-position"></span><button class="button dark" id="memory-next">다음 단계 →</button></div></section>
  <section class="lesson-section"><div class="section-kicker">CHECK YOUR UNDERSTANDING</div><h2>직접 확인하기</h2>
  ${l.quizzes.map((q,i)=>`<fieldset class="quiz"><legend>${i+1}. ${e(q.q)}</legend>${q.options.map((o,j)=>`<label class="quiz-option"><input type="radio" name="quiz-${i}" value="${j}" ${state.answers[i]===j?'checked':''}><span>${e(o)}</span></label>`).join('')}<p class="quiz-feedback" id="quiz-feedback-${i}" role="status"></p></fieldset>`).join('')}
@@ -26,7 +43,7 @@ export function bindLesson(l,user,notify) {
  const state=lessonProgress(user,l.id);let frame=0, frames=l.frames;
  const save=()=>{if(!setLocal(key(user,l.id),state))notify('학습 기록을 저장하지 못했어요. 브라우저 저장 공간을 확인해 주세요.');};
  function drawFrame(){
-  const f=frames[frame];document.querySelector('#memory-frame').innerHTML=`<pre class="memory-code">${e(f.code)}</pre>${f.pointer?`<div class="memory-pointer">${e(f.pointer)}</div>`:''}<div class="memory-cells ${f.released?'released':''}">${f.cells.map(([name,value])=>`<div class="memory-cell ${name===f.target?'pointed':''}"><small>${e(name)}</small><strong>${e(value)}</strong></div>`).join('')}</div><p class="memory-note">${e(f.note)}</p>`;
+  document.querySelector('#memory-frame').innerHTML=frameHTML(frames[frame]);
   document.querySelector('#memory-position').textContent=`${frame+1} / ${frames.length}`;
   document.querySelector('#memory-prev').disabled=frame===0;document.querySelector('#memory-next').disabled=frame===frames.length-1;
  }
@@ -43,5 +60,12 @@ export function bindLesson(l,user,notify) {
  document.querySelector('#complete-lesson').onclick=()=>{state.complete=true;save();document.querySelector('#complete-lesson').textContent='학습 완료 ✓';progress();notify('학습을 완료했어요. 연결된 코딩 문제로 연습해 보세요.');};
  const scenario=document.querySelector('#walkthrough-scenario');
  if(scenario)scenario.onchange=()=>{frames=l.scenarios[Number(scenario.value)].frames;frame=0;drawFrame();};
+ for(const section of l.sections){
+  const w=section.walkthrough;if(!w)continue;
+  const root=document.getElementById(w.id);let step=0;
+  const prev=root.querySelector('[data-prev]'),next=root.querySelector('[data-next]');
+  const draw=()=>{root.querySelector('[data-frame]').innerHTML=frameHTML(w.frames[step]);root.querySelector('[data-position]').textContent=`${step+1} / ${w.frames.length}`;prev.disabled=step===0;next.disabled=step===w.frames.length-1;};
+  prev.onclick=()=>{step--;draw();};next.onclick=()=>{step++;draw();};draw();
+ }
  drawFrame();progress();
 }
