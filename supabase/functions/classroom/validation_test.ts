@@ -1,9 +1,16 @@
 import {validateSubmission,validateReport} from './validation.ts';
 import {readBounded} from './bounded.ts';
+import {usageInput} from './usage.ts';
 const assert=(condition:unknown)=>{if(!condition)throw new Error('Assertion failed')};
 const throws=(fn:()=>unknown)=>{let failed=false;try{fn()}catch{failed=true}assert(failed)};
 const submission={id:'12345678-1234-4234-8234-123456789012',commit_sha:'a'.repeat(40),problem_id:'midterm-4',mode:'full'};
 const base={schema:1,submissionId:submission.id,commitSha:submission.commit_sha,problemId:submission.problem_id,mode:'full',status:'accepted',tests:[{sample:false,status:'accepted',input:'hidden input',expected:'secret expected',actual:'secret actual'}]};
+
+Deno.test('usage history only accepts bounded cursors and explicit filters',()=>{
+  assert(usageInput({username:'friend01',event:'login',before:100}).before===100);
+  assert(usageInput({}).before===null);
+  for(const body of [{username:'friend01,role.eq.owner'},{event:'source'},{before:'1'},{before:-1},{before:1.5},{before:1e20}])throws(()=>usageInput(body));
+});
 
 Deno.test('input validation rejects path traversal, oversized UTF-8 and invalid modes',()=>{
   const valid={problemId:'midterm-4',mode:'counterexample',requestId:submission.id,code:'int main(){}'};

@@ -3,6 +3,7 @@ import { validateSubmission, validId, validateReport, terminal } from './validat
 import { github, course, commitSolution, readReport } from './github.ts';
 import { accountInput, accountEmail, initialPassword, passwordInput } from './accounts.ts';
 import { readBounded } from './bounded.ts';
+import { usageInput } from './usage.ts';
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
   auth: { persistSession:false, autoRefreshToken:false },
@@ -37,6 +38,18 @@ Deno.serve(async (req) => {
     let body;
     try { body = JSON.parse(raw); } catch { return json({error:'잘못된 요청입니다.'},400,cors); }
     if (!body || typeof body !== 'object' || Array.isArray(body)) return json({error:'잘못된 요청입니다.'},400,cors);
+    if (body.action === 'usage_history') {
+      if(member.role!=='owner'||member.must_change_password) return json({error:'비밀번호 변경을 마친 운영자만 사용 기록을 볼 수 있어요.'},403,cors);
+      const input=usageInput(body);
+      let query=db.from('usage_events').select('id,username,event_type,problem_id,mode,status,created_at').order('id',{ascending:false}).limit(101);
+      if(input.username)query=query.eq('username',input.username);
+      if(input.event)query=query.eq('event_type',input.event);
+      if(input.before!==null)query=query.lt('id',input.before);
+      const {data,error}=await query;
+      if(error)throw Error('사용 기록을 불러오지 못했습니다.');
+      const events=(data||[]).slice(0,100);
+      return json({events,nextBefore:data&&data.length>100?events.at(-1)!.id:null},200,cors);
+    }
     if (body.action === 'profile') {
       const {data:submissions,error} = await db.from('submissions').select(fields).eq('user_id',user.id).order('created_at',{ascending:false}).limit(100);
       if (error) throw new Error('제출 기록을 불러오지 못했습니다.');

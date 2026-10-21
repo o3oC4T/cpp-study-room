@@ -8,6 +8,7 @@ import { configured, judgeReady, supabase, api, login } from './api.js';
 import {collections, findCollection} from './collections.js';
 import {lessons, findLesson} from './lessons.js';
 import {learningOverview, lessonHTML, bindLesson} from './learning.js';
+import {usagePage} from './usage.js';
 import '@tabler/core/dist/css/tabler.min.css';
 import './style.css';
 
@@ -64,9 +65,10 @@ function shell(content, page = 'problems') {
       <div class="sidebar-label">PRACTICE SETS</div><nav class="set-nav">${collections.map(c=>`<a href="#/set/${c.id}" class="${location.hash===`#/set/${c.id}`?'active':''}"><span>${c.number}</span>${e(c.title)}</a>`).join('')}</nav>
       <div class="sidebar-bottom"><span class="environment"><span class="dot"></span>Windows · MSVC</span><p>배운 범위 안에서,<br>직접 쓰면서 이해하기.</p><a href="https://github.com/o3oC4T/cpp-study-room" target="_blank" rel="noreferrer">${icon('github')} 프로젝트</a></div>
     </aside>
-    <div class="page-wrapper"><header class="header"><div class="header-path"><span>코드연습실</span><b>/</b>${page==='learn'?'개념 학습':page==='history'?'내 제출':'문제 풀이'}</div><div class="account"><span class="environment">C++ · PC 실습 환경</span><button class="button ${session?'light':'dark'} small" data-action="${session?'account':'login'}">${icon('code')}<span>${e(user || '로그인')}</span></button></div></header>
+    <div class="page-wrapper"><header class="header"><div class="header-path"><span>코드연습실</span><b>/</b>${page==='learn'?'개념 학습':page==='history'?'내 제출':page==='usage'?'사용 기록':'문제 풀이'}</div><div class="account"><span class="environment">C++ · PC 실습 환경</span><button class="button ${session?'light':'dark'} small" data-action="${session?'account':'login'}">${icon('code')}<span>${e(user || '로그인')}</span></button></div></header>
     ${content}<footer><span>코드연습실 · C++ 연습 워크스페이스</span><span>Tabler 기반 · Windows MSVC</span></footer></div>
     <dialog id="dialog"></dialog></div>`;
+  if(member?.role==='owner')document.querySelector('.sidebar-nav').insertAdjacentHTML('beforeend',`<a class="${page==='usage'?'active':''}" href="#/usage">${icon('clock')} 사용 기록 <small>운영자</small></a>`);
 }
 function problemRows(list) {
  return list.map(p=>`<a class="problem-row" href="#/problem/${p.id}"><span class="problem-number">${p.number}</span><span class="problem-title"><strong>${e(p.title)}</strong><small>${e(p.topic)}</small></span><span class="problem-status ${solved(p.id)?'done':draft(p.id)?'draft':''}">${solved(p.id)?'통과 ✓':draft(p.id)?'작성 중':'시작 전'}</span><span class="row-arrow">${icon('arrow')}</span></a>`).join('');
@@ -189,7 +191,7 @@ function showDialog(title, body) {
 }
 function closeDialog() { const dialog=document.querySelector('#dialog'); dialog.close(); dialog.replaceChildren(); }
 function showLogin() {
- showDialog('로그인', `<p>운영자에게 받은 아이디와 비밀번호를 입력하세요.</p><form id="login-form" class="login-form"><label>아이디<input name="username" autocomplete="username" required maxlength="24" placeholder="발급받은 아이디"></label><label>비밀번호<input name="password" type="password" autocomplete="current-password" required maxlength="200"></label><p id="login-error" class="form-error" role="status">${configured?'':'인증 서버 연결을 준비 중입니다. 연결 후 발급 계정으로 이용할 수 있어요.'}</p><button class="button dark" ${configured?'':'disabled'}>로그인</button></form><p class="login-note">회원가입은 제공하지 않습니다. 계정 발급이나 비밀번호 재설정은 운영자에게 요청하세요.</p>`);
+ showDialog('로그인', `<p>운영자에게 받은 아이디와 비밀번호를 입력하세요.</p><form id="login-form" class="login-form"><label>아이디<input name="username" autocomplete="username" required maxlength="24" placeholder="발급받은 아이디"></label><label>비밀번호<input name="password" type="password" autocomplete="current-password" required maxlength="200"></label><p id="login-error" class="form-error" role="status">${configured?'':'인증 서버 연결을 준비 중입니다. 연결 후 발급 계정으로 이용할 수 있어요.'}</p><button class="button dark" ${configured?'':'disabled'}>로그인</button></form><p class="login-note">회원가입은 제공하지 않습니다. 계정 발급이나 비밀번호 재설정은 운영자에게 요청하세요. 로그인·제출 기록은 운영자가 확인할 수 있습니다.</p>`);
  document.querySelector('#login-form').onsubmit=async ev=>{ev.preventDefault();const form=ev.currentTarget;const button=form.querySelector('button');button.disabled=true;const data=new FormData(form);try{await login(data.get('username'),data.get('password'));form.reset();closeDialog();}catch(error){document.querySelector('#login-error').textContent=error.message;}finally{button.disabled=false;}};
 }
 function showAccount() {
@@ -274,6 +276,7 @@ function route() {
     if (p) problemPage(p);
     else { location.hash = '#/'; toast('문제를 찾지 못했어요.'); }
   } else if (parts[0] === 'history') historyPage();
+  else if (parts[0] === 'usage') {activeProblem=null;const version=routeVersion;usagePage({member,shell,api,isCurrent:()=>version===routeVersion});}
   else if (parts[0] === 'set' && findCollection(parts[1])) dashboard(findCollection(parts[1]));
   else if (parts[0] === 'learn') {
     activeProblem=null;const lesson=findLesson(parts[1]);

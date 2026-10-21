@@ -169,3 +169,36 @@ test('pre-issued login uses a password form and never stores the password locall
  await page.getByRole('button',{name:'닫기',exact:true}).click();
  await expect(page.locator('input[type="password"]')).toHaveCount(0);
 });
+
+test('owner usage page filters and paginates escaped records',async({page})=>{
+ await page.route('**/src/api.js',route=>route.fulfill({contentType:'application/javascript',body:`
+ export const configured=true,judgeReady=true;
+ export const supabase={auth:{onAuthStateChange(callback){setTimeout(()=>callback('SIGNED_IN',{user:{id:'owner-test'}}),0)}}};
+ export async function login(){};
+ export async function api(action,data){
+  if(action==='profile')return {member:{username:'owner-test',role:'owner',must_change_password:false},submissions:[],solved:[]};
+  window.usageRequest=data;
+  return {events:[{id:data.before?39:40,username:'<img src=x onerror=alert(1)>',event_type:'login',created_at:'2026-10-21T00:00:00Z'}],nextBefore:data.before?null:40};
+ }` }));
+ await page.goto('/#/usage');
+ await expect(page.getByRole('link',{name:/사용 기록/})).toBeVisible();
+ await expect(page.locator('#usage-rows tr')).toHaveCount(1);
+ await expect(page.locator('#usage-rows img')).toHaveCount(0);
+ await page.locator('#usage-more').click();
+ await expect(page.locator('#usage-rows tr')).toHaveCount(2);
+ await expect(page.locator('#usage-more')).toBeHidden();
+ await page.locator('#usage-filter input').fill('friend01');
+ await page.locator('#usage-filter select').selectOption('login');
+ await page.locator('#usage-filter button').click();
+ await expect(page.locator('#usage-rows tr')).toHaveCount(1);
+ expect(await page.evaluate(()=>window.usageRequest)).toEqual({username:'friend01',event:'login',before:null});
+});
+
+test('student cannot open the owner usage page through its URL',async({page})=>{
+ await mockConnectedApi(page,{});
+ await page.goto('/#/usage');
+ await expect(page.getByRole('button',{name:'test-student'})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'운영자 전용 화면'})).toBeVisible();
+ await expect(page.locator('a[href="#/usage"]')).toHaveCount(0);
+ await expect(page.locator('#usage-rows')).toHaveCount(0);
+});
