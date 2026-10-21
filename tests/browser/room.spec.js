@@ -122,7 +122,7 @@ test('sets stay grouped in fours and search filters problem titles and topics',a
 });
 test('learning includes source pages, interactive memory and persisted exercises',async({page})=>{
  await page.goto('/#/learn');
- await expect(page.locator('.lesson-card')).toHaveCount(6);
+ await expect(page.locator('.lesson-card')).toHaveCount(7);
  await page.goto('/#/learn/pointer-value');
  await expect(page.locator('.source-note')).toContainText('Ch03');
  await page.getByRole('button',{name:'다음 단계 →',exact:true}).click();
@@ -144,7 +144,7 @@ test('learning includes source pages, interactive memory and persisted exercises
 });
 test('all learning routes are readable at desktop widths',async({page})=>{
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
- for(const id of ['pointer-value','pointer-array','struct-access','dynamic-array','struct-records','dynamic-nested']){
+ for(const id of ['pointer-value','pointer-array','struct-access','dynamic-array','struct-records','dynamic-nested','exception-handling']){
   await page.goto('/#/learn/'+id);
   await expect(page.locator('.lesson-section')).toHaveCount(5);
   await expect(page.locator('#memory-frame')).toBeVisible();

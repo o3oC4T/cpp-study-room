@@ -1,3 +1,4 @@
+import {exceptionLesson} from './exception-lesson.js';
 const ch3='Do it! C++ 완전 정복_03차시(Ch03).pdf';
 export const lessons=[
  {id:'pointer-value',track:'포인터',number:'01',title:'주소와 값 구분하기',summary:'&로 주소를 얻고, *로 그 주소의 값을 읽고 바꿉니다.',source:`${ch3} · PDF 4~9쪽`,minutes:10,
@@ -84,5 +85,6 @@ export const lessons=[
   {q:'delete[] groups;만 하면 int* scores가 가리키는 배열도 해제될까요?',options:['자동 해제된다','직접 각 scores를 해제해야 한다','첫 번째 scores만 해제된다'],answer:1,why:'포인터 멤버를 제거하는 것과 그 포인터가 가리키는 별도 공간을 해제하는 것은 다릅니다.'},
   {q:'행별 new[]로 만든 int** matrix의 해제 순서는?',options:['matrix 먼저, 각 행 나중','각 행 먼저, matrix 나중','delete matrix 한 번'],answer:1,why:'행의 주소를 읽을 수 있을 때 행을 해제하고, 마지막에 포인터 배열을 해제합니다.'}],
  blank:{q:'반복문 안에서 각 그룹의 점수 배열을 해제하세요.',before:'for (int i = 0; i < n; i++)\n{\n',after:'\n}\ndelete[] groups;',answers:['delete[] groups[i].scores;'],hint:'바깥 groups가 아니라 i번째 그룹의 scores가 가리키는 배열입니다.',answer:'delete[] groups[i].scores;'},practice:['practice-6-3','practice-8-2','practice-8-3']},
+ exceptionLesson,
 ];
 export const findLesson=id=>lessons.find(l=>l.id===id);

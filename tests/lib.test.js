@@ -33,6 +33,6 @@ import {lessons} from '../src/lessons.js';
 test('all sets have four varied problems and learning links resolve',()=>{
  assert.equal(collections.length,9);
  for(const c of collections){const group=problems.filter(p=>p.collection===c.id);assert.equal(group.length,4);assert.equal(new Set(group.map(p=>p.topic)).size,4);}
- assert.equal(lessons.length,6);
+ assert.equal(lessons.length,7);
  for(const l of lessons){assert.ok(l.source.includes('PDF')||l.source.includes('쪽'));assert.equal(l.sections.length,3);assert.ok(l.frames.length>=3);for(const id of l.practice)assert.ok(problems.some(p=>p.id===id));}
 });
