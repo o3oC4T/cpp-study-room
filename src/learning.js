@@ -1,6 +1,7 @@
 import {escapeHTML as e, getLocal, setLocal} from './lib.js';
 import {lessons} from './lessons.js';
 import {findProblem} from './problems.js';
+import {codeFillHTML,bindCodeFill} from './code-fill.js';
 const key=(user,id)=>`cpp-room:lesson:${user || 'guest'}:${id}`;
 export const lessonProgress=(user,id)=>getLocal(key(user,id),{answers:{},blank:false,complete:false});
 function matrixHTML(m) {
@@ -18,7 +19,7 @@ function frameHTML(f) {
  return `<pre class="memory-code">${e(f.code)}</pre>${f.stepLabel?`<p class="walkthrough-step-label">${e(f.stepLabel)}</p>`:''}${f.matrix?matrixHTML(f.matrix):`${f.pointer?`<div class="memory-pointer">${e(f.pointer)}</div>`:''}<div class="memory-cells ${f.released?'released':''}">${f.cells.map(([name,value])=>`<div class="memory-cell ${name===f.target?'pointed':''}"><small>${e(name)}</small><strong>${e(value)}</strong></div>`).join('')}</div>`}<p class="memory-note">${e(f.note)}</p>`;
 }
 function sectionWalkthroughHTML(w) {
- return `<div class="section-walkthrough" id="${e(w.id)}" role="group" aria-labelledby="${e(w.id)}-title"><div class="section-kicker">MEMORY WALKTHROUGH</div><h3 id="${e(w.id)}-title">${e(w.title)}</h3><p>${e(w.description)}</p><div data-frame aria-live="polite"></div><div class="memory-controls"><button class="button light" data-prev>← 이전 단계</button><span data-position></span><button class="button dark" data-next>다음 단계 →</button></div></div>`;
+ return `<div class="section-walkthrough" id="${e(w.id)}" role="group" aria-labelledby="${e(w.id)}-title"><div class="section-kicker">MEMORY WALKTHROUGH</div><h3 id="${e(w.id)}-title">${e(w.title)}</h3><p>${e(w.description)}</p><div data-frame aria-live="polite"></div><div class="memory-controls"><button class="button light" data-prev>← 이전 단계</button><span data-position></span><button class="button dark" data-next>다음 단계 →</button></div>${w.exercise?codeFillHTML(w.exercise):''}</div>`;
 }
 export function learningOverview(user) {
  return `<main class="page-content learning-home"><div class="page-heading"><div><div class="eyebrow">LEARN BY DOING</div><h1>개념부터 직접 연결하기</h1><p>PDF의 개념을 읽고, 값과 실행 흐름을 따라가고, 코드로 확인하세요.</p></div><span class="pill">${lessons.length}개 단원 · ${lessons.filter(l=>lessonProgress(user,l.id).complete).length}개 완료</span></div>
@@ -66,6 +67,7 @@ export function bindLesson(l,user,notify) {
   const prev=root.querySelector('[data-prev]'),next=root.querySelector('[data-next]');
   const draw=()=>{root.querySelector('[data-frame]').innerHTML=frameHTML(w.frames[step]);root.querySelector('[data-position]').textContent=`${step+1} / ${w.frames.length}`;prev.disabled=step===0;next.disabled=step===w.frames.length-1;};
   prev.onclick=()=>{step--;draw();};next.onclick=()=>{step++;draw();};draw();
+  if(w.exercise)bindCodeFill(w.exercise,state,save);
  }
  drawFrame();progress();
 }

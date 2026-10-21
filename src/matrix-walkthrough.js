@@ -2,6 +2,38 @@ export const matrixWalkthrough = {
   id:'matrix-walkthrough',
   title:'2차원 배열: 한 줄씩 따라가기',
   description:'위 코드의 두 반복문을 i = 0, 1로 나누어 따라갑니다. 행 포인터 배열과 각 행의 정수 배열이 언제 생기고 해제되는지 확인하세요.',
+  exercise:{
+    id:'matrix-code-fill',
+    title:'2차원 배열 코드 채우기',
+    description:'그림에서 본 할당과 해제 과정을 네 줄로 완성하세요. rows, cols, matrix, i를 사용하고 각 줄의 세미콜론까지 작성하세요.',
+    success:'4줄 모두 맞았어요. 각 행을 먼저 해제하고 마지막에 행 포인터 배열을 해제합니다.',
+    fields:[
+      {
+        label:'1. 행 포인터 배열 할당',
+        before:'int rows = 2, cols = 3;\n',
+        answers:['int** matrix = new int*[rows];'],
+        hint:'matrix를 int**로 선언하고, int*를 담는 칸을 rows개 만드세요. 아직 각 행의 정수를 할당하는 단계는 아닙니다.',
+      },
+      {
+        label:'2. 각 행의 정수 배열 할당',
+        before:'for (int i = 0; i < rows; i++)\n',
+        answers:['matrix[i] = new int[cols];','*(matrix + i) = new int[cols];'],
+        hint:'i번째 행에 정수 cols개를 위한 공간을 만들고 그 주소를 matrix[i]에 저장하세요.',
+      },
+      {
+        label:'3. 각 행의 정수 배열 해제',
+        before:'for (int i = 0; i < rows; i++)\n',
+        answers:['delete[] matrix[i];','delete[] *(matrix + i);'],
+        hint:'반복문 안에서는 i번째 행 하나를 해제합니다. new[]로 만든 배열이므로 delete[]를 사용하세요.',
+      },
+      {
+        label:'4. 행 포인터 배열 해제',
+        before:'',
+        answers:['delete[] matrix;'],
+        hint:'모든 행을 해제한 뒤, 마지막으로 행 주소를 담고 있던 matrix 배열을 해제하세요.',
+      },
+    ],
+  },
   frames:[
     {
       code:'int rows = 2, cols = 3;',
