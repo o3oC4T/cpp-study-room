@@ -128,7 +128,14 @@
 - 정답, 오답, CE, RE, TLE, MLE, 출력 초과, 시스템 오류를 구분한다.
 - 반례 찾기: 경계값 + 시드가 고정된 무작위 입력 16개, 첫 실패의 입력·기대·실제 출력 표시.
   최소 반례를 보장하지 않으며 반례 없음은 정답 통과로 집계하지 않는다.
-- 예제/전체/반례 모두 최근 24시간 1인 5회, 전체 20회 한도를 공유한다.
+- 예제/전체/반례 모두 최근 24시간 1인 50회, 전체 300회 한도를 공유한다.
+- 위 일일 한도는 연습실에서 정한 제한이며 GitHub의 월간 무료 사용량과 별개다.
+  GitHub Actions 추가 과금을 차단한 상태에서 운영한다. 개인 계정의 Actions
+  예산 $0 및 'Stop usage when budget limit is reached'를 확인하거나,
+  결제 수단이 등록되지 않은 상태를 확인한 뒤 한도 상향을 적용한다.
+  무료 사용량이 소진되면 월간 갱신까지 채점이 중단될 수 있다.
+  https://docs.github.com/en/billing/concepts/product-billing/github-actions
+  https://docs.github.com/en/billing/how-tos/set-up-budgets
 - 최근 제출 100개와 별개로 전체 통과 문제를 집계한다.
 
 격리
