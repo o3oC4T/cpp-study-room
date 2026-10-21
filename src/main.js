@@ -1,6 +1,9 @@
 import { EditorView, basicSetup } from 'codemirror';
+import { keymap } from '@codemirror/view';
+import { EditorState } from '@codemirror/state';
+import { insertTab, indentLess } from '@codemirror/commands';
 import { cpp } from '@codemirror/lang-cpp';
-import { syntaxHighlighting, HighlightStyle } from '@codemirror/language';
+import { syntaxHighlighting, HighlightStyle, indentUnit } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 import { problems, findProblem } from './problems.js';
 import { escapeHTML as e, getLocal, setLocal, downloadSource, statusNames, modeNames, firstDifference } from './lib.js';
@@ -29,6 +32,7 @@ const icons = {
 const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] || icons.code}</svg>`;
 const app = document.querySelector('#app');
 let editor, activeProblem, session, member, history = [], currentResult, polling, routeVersion = 0, busy = false;
+let editorDraft;
 let pollGeneration = 0, pollInFlight = false, pollFailures = 0;
 const isPending = (record) => ['preparing', 'queued', 'running'].includes(record.status);
 const storageKey = (id) => `cpp-room:draft:${session?.user.id || 'guest'}:${id}`;
@@ -44,9 +48,11 @@ function toast(message) {
   toast.timer = setTimeout(() => el.classList.remove('show'), 4200);
 }
 function saveDraft() {
-  if (!editor || !activeProblem) return;
-  if (editor.state.doc.toString() === activeProblem.starter && !draft(activeProblem.id)) return;
-  const ok = setLocal(storageKey(activeProblem.id), { code: editor.state.doc.toString(), updatedAt: Date.now() });
+  if (editor && editorDraft) persistDraft(editor.state.doc.toString(), editorDraft);
+}
+function persistDraft(code, context) {
+  if (code === context.starter && !getLocal(context.key)) return;
+  const ok = setLocal(context.key, { code, updatedAt: Date.now() });
   const el = document.querySelector('#save-state');
   if (el) el.textContent = ok ? '이 브라우저에 저장됨' : '저장 공간 부족 · 파일로 저장하세요';
 }
@@ -54,6 +60,7 @@ function cleanup() {
   saveDraft();
   editor?.destroy();
   editor = null;
+  editorDraft = null;
   currentResult = null;
 }
 function shell(content, page = 'problems') {
@@ -127,7 +134,7 @@ function problemPage(p) {
             <button class="icon-button" data-action="reset" title="기본 코드로 되돌리기" aria-label="기본 코드로 되돌리기">${icon('reset')}</button>
           </div></div>
           <div id="editor" aria-label="C++ 코드 편집기"></div>
-          <div class="editor-bottom"><span id="save-state">${saved ? '이 브라우저에 저장됨' : '작성하면 자동 저장돼요'}</span><span>UTF-8 · C++</span></div>
+          <div class="editor-bottom"><span id="save-state">${saved ? '이 브라우저에 저장됨' : '작성하면 자동 저장돼요'}</span><span id="editor-keys">Tab 들여쓰기 · Shift+Tab 내어쓰기 · Esc 후 Tab 이동</span></div>
         </div>
         <div class="run-bar"><div><span class="dot ${judgeReady ? '' : 'muted'}"></span>${judgeReady ? 'Windows · MSVC' : '온라인 채점 연결 준비 중'}</div><button class="button light" data-action="submit-sample" ${!judgeReady ? 'disabled' : ''}>${icon('play')} 예제 실행</button><button class="button light" data-action="counterexample" ${!judgeReady ? 'disabled' : ''}>${icon('search')} 반례 찾기</button><button class="button dark" data-action="submit" ${!judgeReady ? 'disabled' : ''}>제출하기 ${icon('arrow')}</button></div>
         <section class="result-panel" aria-live="polite"><div class="panel-title">${icon('code')} 실행 결과</div><div id="result"><div class="empty-result"><span class="empty-icon">${icon('code')}</span><strong>${judgeReady ? '작성한 코드를 확인해 볼까요?' : '코드부터 차근차근 작성해 보세요'}</strong><p>${judgeReady ? '예제를 실행하거나 제출하면 결과가 여기에 표시돼요.' : '지금은 .cpp 파일로 저장해 Visual Studio에서 실행할 수 있어요.<br>온라인 채점은 서버 연결 후 사용할 수 있어요.'}</p></div></div></section>
@@ -135,10 +142,14 @@ function problemPage(p) {
     </div>
     <input type="file" accept=".cpp,.cc,.cxx,.txt" id="source-file" hidden />
   </main>`);
+  const context = { key: storageKey(p.id), starter: p.starter };
+  editorDraft = context;
   editor = new EditorView({
     doc: saved?.code ?? p.starter,
     extensions: [
       basicSetup, cpp(),
+      keymap.of([{ key: 'Tab', run: insertTab, shift: indentLess }]),
+      indentUnit.of('\t'), EditorState.tabSize.of(4),
       syntaxHighlighting(HighlightStyle.define([
         { tag: tags.keyword, color: '#c4a5ff' },
         { tag: [tags.typeName, tags.className], color: '#7dd3fc' },
@@ -149,8 +160,10 @@ function problemPage(p) {
         { tag: tags.function(tags.variableName), color: '#8bbfff' },
         { tag: tags.operator, color: '#b6c1d7' },
       ])),
-      EditorView.contentAttributes.of({ 'aria-label': 'C++ 코드', spellcheck: 'false' }),
-      EditorView.updateListener.of((update) => { if (update.docChanged) saveDraft(); }),
+      EditorView.contentAttributes.of({ 'aria-label': 'C++ 코드', 'aria-describedby': 'editor-keys', spellcheck: 'false' }),
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged) persistDraft(update.state.doc.toString(), context);
+      }),
       EditorView.theme({
         '&': { background: '#101522', color: '#d7e0ef', fontSize: '13px', height: '100%' },
         '.cm-content': { fontFamily: '"Cascadia Code", Consolas, monospace', padding: '18px 0', caretColor: '#8daaff', minHeight: '420px' },
@@ -394,23 +407,38 @@ document.addEventListener('click', async (event) => {
 });
 window.addEventListener('hashchange', route);
 window.addEventListener('pagehide', saveDraft);
+window.addEventListener('blur', saveDraft);
 window.addEventListener('online', () => scheduleResults(0));
-document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleResults(0); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) saveDraft();
+  else scheduleResults(0);
+});
 route();
 if (supabase) {
-  supabase.auth.onAuthStateChange((event, next) => {
-    if (next?.user.id === session?.user.id && next && ['TOKEN_REFRESHED','SIGNED_IN'].includes(event)) {
+  supabase.auth.onAuthStateChange((_event, next) => {
+    if ((next?.user.id ?? null) === (session?.user.id ?? null)) {
       session = next; scheduleResults(0); return;
     }
-    saveDraft(); editor?.destroy(); editor = null;
+    saveDraft();
     resetPolling(); busy = false;
     session = next;
     member = null; history = []; solvedProblemIds = new Set();
     const generation = pollGeneration;
     setTimeout(async () => {
+      if (generation !== pollGeneration) return;
+      route();
       await refreshAccount();
       if (generation !== pollGeneration) return;
-      route(); scheduleResults(0);
+      if (editor) {
+        document.querySelector('.account button span').textContent = member?.display_name || member?.username || (session ? '내 계정' : '로그인');
+        if (member?.role === 'owner' && !document.querySelector('.sidebar-nav a[href="#/usage"]')) {
+          document.querySelector('.sidebar-nav').insertAdjacentHTML('beforeend', `<a href="#/usage">${icon('clock')} 사용 기록 <small>운영자</small></a>`);
+        }
+        const latest = history.find(s => s.problem_id === activeProblem.id);
+        if (latest) updateResultViews(latest);
+        updateSubmitButtons();
+      } else route();
+      scheduleResults(0);
     }, 0);
   });
 }
